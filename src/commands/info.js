@@ -51,8 +51,7 @@ module.exports = {
       .addFields(
         { name: 'Network', value: config.blockchain.chainName, inline: true },
         { name: 'Chain ID', value: config.blockchain.chainId, inline: true },
-        { name: 'Current Block', value: currentBlock.toString(), inline: true },
-        { name: 'RPC Endpoint', value: `\`${config.blockchain.rpcUrl.replace(/\/v2\/.*/, '/v2/***')}\``, inline: false }
+        { name: 'Current Block', value: currentBlock.toString(), inline: true }
       );
     
     // Add each contract as a field
@@ -60,7 +59,7 @@ module.exports = {
       const shortAddress = `${contract.address.slice(0, 10)}...${contract.address.slice(-8)}`;
       embed.addFields({
         name: `${index + 1}. ${contract.name}`,
-        value: `**Address:** \`${shortAddress}\`\n**Role:** <@&${contract.roleId}>\n**Description:** ${contract.description || 'N/A'}`,
+        value: `**Address:** \`${shortAddress}\`\n**Role:** <@&${contract.roleId}>`,
         inline: false
       });
     });
