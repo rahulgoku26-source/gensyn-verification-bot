@@ -4,37 +4,39 @@ const logger = require('../utils/logger');
 
 class BlockchainService {
   constructor() {
-    this.provider = new ethers.JsonRpcProvider(config.blockchain.rpcUrl);
     this.providers = new Map();
     this.cache = new Map();
     
-    // Initialize provider for each contract (if they have custom RPC)
+    // Initialize provider for each contract with its own RPC URL(if they have any different RPC URL)
     config.contracts.forEach(contract => {
-      if (contract.rpcUrl && contract.rpcUrl !== config.blockchain.rpcUrl) {
-        this.providers.set(
-          contract.id, 
-          new ethers.JsonRpcProvider(contract.rpcUrl)
-        );
-        logger.debug(`Custom RPC for ${contract.name}`, { rpc: contract.rpcUrl });
-      }
+      this.providers.set(
+        contract.id, 
+        new ethers.JsonRpcProvider(contract.rpcUrl)
+      );
+      logger.debug(`Provider initialized for ${contract. name}`, { rpc: contract.rpcUrl });
     });
+
+    // Default provider (first contract's RPC)
+    if (config.contracts.length > 0) {
+      this.provider = this.providers. get(config.contracts[0].id);
+    }
   }
 
   // Get provider for specific contract (or default)
   getProvider(contractId = null) {
     if (contractId && this.providers.has(contractId)) {
-      return this.providers.get(contractId);
+      return this. providers.get(contractId);
     }
     return this.provider;
   }
 
   async testConnection() {
     try {
-      const blockNumber = await this.provider.getBlockNumber();
+      const blockNumber = await this. provider.getBlockNumber();
       const network = await this.provider.getNetwork();
       logger.blockchain('Connection established', { 
         blockNumber, 
-        chainId: network.chainId.toString() 
+        chainId: network.chainId. toString() 
       });
       return { 
         success: true, 
@@ -42,9 +44,44 @@ class BlockchainService {
         chainId: network.chainId.toString() 
       };
     } catch (error) {
-      logger.error('Blockchain connection failed', { error: error.message });
+      logger. error('Blockchain connection failed', { error: error.message });
       return { success: false, error: error.message };
     }
+  }
+
+  // Test connection for all configured providers
+  async testAllConnections() {
+    const results = [];
+    
+    for (const contract of config.contracts) {
+      try {
+        const provider = this.providers.get(contract. id);
+        const blockNumber = await provider. getBlockNumber();
+        const network = await provider. getNetwork();
+        results.push({
+          contractId: contract.id,
+          contractName: contract.name,
+          rpcUrl: contract.rpcUrl,
+          success: true,
+          blockNumber,
+          chainId: network. chainId.toString()
+        });
+        logger.debug(`Connection test passed for ${contract.name}`);
+      } catch (error) {
+        results.push({
+          contractId: contract.id,
+          contractName: contract.name,
+          rpcUrl: contract.rpcUrl,
+          success: false,
+          error: error.message
+        });
+        logger.error(`Connection test failed for ${contract.name}`, { 
+          error: error.message 
+        });
+      }
+    }
+
+    return results;
   }
 
   async getCurrentBlock(contractId = null) {
@@ -59,7 +96,7 @@ class BlockchainService {
 
   async getTransactionCount(walletAddress, contractId = null) {
     try {
-      const provider = this.getProvider(contractId);
+      const provider = this. getProvider(contractId);
       return await provider.getTransactionCount(walletAddress);
     } catch (error) {
       logger.error('Failed to get transaction count', { 
@@ -73,31 +110,31 @@ class BlockchainService {
   // Find transaction to ANY of the configured contracts
   async findTransactionToAnyContract(walletAddress, fromBlock, toBlock) {
     const normalizedWallet = walletAddress.toLowerCase();
-    const contractAddresses = config.getAllContractAddresses();
 
     logger.blockchain('Searching for transactions to any contract', { 
       wallet: normalizedWallet,
-      contracts: contractAddresses.length,
+      contracts: config.contracts. length,
       fromBlock, 
       toBlock 
     });
 
     try {
-      // Method 1: Check logs for each contract
-      for (const contractAddress of contractAddresses) {
+      // Method 1: Check logs for each contract (using per-contract provider)
+      for (const contract of config.contracts) {
         try {
-          const logs = await this.provider.getLogs({
-            address: contractAddress,
+          const provider = this.getProvider(contract.id);
+          
+          const logs = await provider. getLogs({
+            address: contract.address,
             fromBlock,
             toBlock: 'latest'
           });
 
-          logger.debug(`Found ${logs.length} events for contract ${contractAddress}`);
+          logger.debug(`Found ${logs. length} events for ${contract.name}`);
 
           for (const log of logs) {
-            const tx = await this.provider.getTransaction(log.transactionHash);
-            if (tx && tx.from.toLowerCase() === normalizedWallet) {
-              const contract = config.getContractByAddress(contractAddress);
+            const tx = await provider.getTransaction(log. transactionHash);
+            if (tx && tx.from. toLowerCase() === normalizedWallet) {
               logger.blockchain('Transaction found via logs', { 
                 hash: tx.hash, 
                 contract: contract.name 
@@ -106,33 +143,33 @@ class BlockchainService {
             }
           }
         } catch (logError) {
-          logger.debug(`Log search failed for ${contractAddress}`, { 
+          logger.debug(`Log search failed for ${contract.name}`, { 
             error: logError.message 
           });
         }
       }
 
-      // Method 2: Block scanning fallback
+      // Method 2: Block scanning fallback (using per-contract provider)
       const scanLimit = Math.min(100, toBlock - fromBlock);
       const startBlock = Math.max(fromBlock, toBlock - scanLimit);
 
       logger.debug(`Scanning blocks ${startBlock} to ${toBlock}`);
 
-      for (let i = toBlock; i >= startBlock; i--) {
-        const block = await this.provider.getBlock(i, true);
+      for (const contract of config.contracts) {
+        const provider = this.getProvider(contract.id);
         
-        if (!block || !block.transactions) continue;
+        for (let i = toBlock; i >= startBlock; i--) {
+          const block = await provider. getBlock(i, true);
+          
+          if (! block || ! block.transactions) continue;
 
-        for (const tx of block.transactions) {
-          if (typeof tx === 'object' && 
-              tx.from?.toLowerCase() === normalizedWallet) {
-            
-            // Check if tx.to matches any contract
-            const contract = config.getContractByAddress(tx.to);
-            if (contract) {
-              logger.blockchain('Transaction found via block scan', { 
+          for (const tx of block.transactions) {
+            if (typeof tx === 'object' && 
+                tx.from?. toLowerCase() === normalizedWallet &&
+                tx.to?.toLowerCase() === contract.address.toLowerCase()) {
+              logger. blockchain('Transaction found via block scan', { 
                 hash: tx.hash, 
-                contract: contract.name,
+                contract: contract. name,
                 block: i 
               });
               return { tx, found: true, contract };
@@ -168,9 +205,9 @@ class BlockchainService {
     const cacheKey = `${normalizedWallet}-${normalizedContract}-${fromBlock}-${toBlock}`;
 
     // Check cache
-    if (this.cache.has(cacheKey)) {
+    if (this. cache.has(cacheKey)) {
       logger.debug('Transaction found in cache');
-      return this.cache.get(cacheKey);
+      return this. cache.get(cacheKey);
     }
 
     const provider = this.getProvider(contractId);
@@ -190,11 +227,11 @@ class BlockchainService {
         toBlock: 'latest'
       });
 
-      logger.debug(`Found ${logs.length} contract events`);
+      logger.debug(`Found ${logs. length} contract events`);
 
       for (const log of logs) {
         const tx = await provider.getTransaction(log.transactionHash);
-        if (tx && tx.from.toLowerCase() === normalizedWallet) {
+        if (tx && tx.from. toLowerCase() === normalizedWallet) {
           const contract = config.getContractByAddress(contractAddress);
           const result = { tx, found: true, contract };
           this.cache.set(cacheKey, result);
@@ -209,12 +246,12 @@ class BlockchainService {
       for (let i = toBlock; i >= startBlock; i--) {
         const block = await provider.getBlock(i, true);
         
-        if (!block || !block.transactions) continue;
+        if (! block || !block. transactions) continue;
 
         for (const tx of block.transactions) {
           if (typeof tx === 'object' && 
-              tx.from?.toLowerCase() === normalizedWallet && 
-              tx.to?.toLowerCase() === normalizedContract) {
+              tx.from?. toLowerCase() === normalizedWallet && 
+              tx. to?.toLowerCase() === normalizedContract) {
             const contract = config.getContractByAddress(contractAddress);
             const result = { tx, found: true, contract };
             this.cache.set(cacheKey, result);
@@ -245,7 +282,7 @@ class BlockchainService {
         specificContract: specificContractId 
       });
 
-      const currentBlock = await this.getCurrentBlock(specificContractId);
+      const currentBlock = await this. getCurrentBlock(specificContractId);
       if (!currentBlock) {
         return { 
           success: false, 
@@ -253,7 +290,7 @@ class BlockchainService {
         };
       }
 
-      const txCount = await this.getTransactionCount(
+      const txCount = await this. getTransactionCount(
         normalizedWallet, 
         specificContractId
       );
@@ -283,14 +320,14 @@ class BlockchainService {
         );
       } else {
         // Search for any contract
-        searchResult = await this.findTransactionToAnyContract(
+        searchResult = await this. findTransactionToAnyContract(
           normalizedWallet,
           fromBlock,
           currentBlock
         );
       }
 
-      if (!searchResult.found) {
+      if (! searchResult.found) {
         const contractList = specificContractId 
           ? `contract ${config.getContractById(specificContractId).name}`
           : 'any configured contract';
@@ -303,7 +340,7 @@ class BlockchainService {
       const tx = searchResult.tx;
       const contract = searchResult.contract;
 
-      // Get receipt
+      // Get receipt using the contract's specific provider
       const provider = this.getProvider(contract.id);
       const receipt = await provider.getTransactionReceipt(tx.hash);
 
@@ -317,14 +354,14 @@ class BlockchainService {
 
       const confirmations = currentBlock - parseInt(receipt.blockNumber);
 
-      if (confirmations < config.blockchain.minConfirmations) {
+      if (confirmations < config.blockchain. minConfirmations) {
         return { 
           success: false, 
           error: `Transaction needs ${config.blockchain.minConfirmations - confirmations} more confirmation(s)` 
         };
       }
 
-      logger.verification(true, normalizedWallet, { 
+      logger. verification(true, normalizedWallet, { 
         hash: tx.hash,
         contract: contract.name,
         confirmations 
@@ -336,7 +373,7 @@ class BlockchainService {
         receipt,
         hash: tx.hash,
         confirmations,
-        blockNumber: receipt.blockNumber.toString(),
+        blockNumber: receipt.blockNumber. toString(),
         contract,
       };
 
@@ -347,6 +384,36 @@ class BlockchainService {
       });
       return { success: false, error: error.message };
     }
+  }
+
+  // Verify wallet against ALL contracts and return results for each
+  async verifyAllContracts(walletAddress) {
+    const normalizedWallet = walletAddress.toLowerCase();
+    const results = [];
+
+    for (const contract of config.contracts) {
+      try {
+        const result = await this.verifyTransaction(normalizedWallet, contract. id);
+        results.push({
+          contractId: contract. id,
+          contractName: contract.name,
+          contractAddress: contract.address,
+          roleId: contract.roleId,
+          ... result
+        });
+      } catch (error) {
+        results.push({
+          contractId: contract.id,
+          contractName: contract.name,
+          contractAddress: contract.address,
+          roleId: contract. roleId,
+          success: false,
+          error: error.message
+        });
+      }
+    }
+
+    return results;
   }
 
   clearCache() {
