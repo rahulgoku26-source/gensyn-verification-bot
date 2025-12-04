@@ -12,13 +12,13 @@ logs/
 
 # Database
 data/
-*. json
-! package. json
-! package-lock.json
+*.json
+!package.json
+!package-lock.json
 
 # OS files
 .DS_Store
-Thumbs. db
+Thumbs.db
 
 # IDE
 .vscode/
