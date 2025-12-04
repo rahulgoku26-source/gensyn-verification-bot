@@ -170,28 +170,8 @@ npm run pm2:start
 | Public RPC | 6-10 | 360-600 | Small communities |
 | Alchemy Key | 50-200 | 3,000-12,000 | Medium-large projects |
 
-## 🎨 Use Cases
-
-### 1. DeFi Protocol
-```
-Contract 1: Token → Holder Role
-Contract 2: Staking → Staker Role
-Contract 3: Governance → Governor Role
-```
-
-### 2. NFT Collections
-```
-Contract 1: Genesis Collection → Genesis Holder
-Contract 2: Season 2 → Season 2 Holder
-Contract 3: Rare Collection → Rare Holder
-```
-
-### 3. Multi-Tier Membership
-```
-Contract 1: Bronze Tier → Bronze Member
-Contract 2: Silver Tier → Silver Member
-Contract 3: Gold Tier → Gold Member
-```
+## 🎨 Use Cases 
+## Still on developement period
 
 ## 📝 Database Structure
 ```json
