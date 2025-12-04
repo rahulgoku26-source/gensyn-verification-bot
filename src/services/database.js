@@ -5,292 +5,187 @@ const logger = require('../utils/logger');
 
 class Database {
   constructor() {
-    this.dbPath = config.database.path;
-    this.data = { 
-      users: {}, 
-      metadata: { 
-        version: '2.0.0',
-        created: new Date().toISOString(),
-        contracts: config.contracts.map(c => ({ 
-          id: c.id, 
-          name: c.name, 
-          address: c.address 
-        }))
-      } 
-    };
-    this.ensureDirectoryExists();
-    this.load();
-    
-    if (config.database.backupEnabled) {
-      this.startBackupSchedule();
-    }
+    this. dbPath = config.database.path;
+    this.data = {};
+    this.init();
   }
 
-  ensureDirectoryExists() {
+  init() {
     const dir = path.dirname(this.dbPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
-      logger.info('Created database directory', { path: dir });
     }
-  }
 
-  load() {
-    try {
-      if (fs.existsSync(this.dbPath)) {
-        const rawData = fs.readFileSync(this.dbPath, 'utf8');
+    if (fs.existsSync(this.dbPath)) {
+      try {
+        const rawData = fs.readFileSync(this. dbPath, 'utf8');
         this.data = JSON.parse(rawData);
-        logger.info('Database loaded', { users: Object.keys(this.data.users).length });
-      } else {
-        this.save();
-        logger.info('Created new database file');
+        logger. info(`Database loaded: ${Object.keys(this. data).length} users`);
+      } catch (error) {
+        logger.error('Failed to load database', { error: error.message });
+        this.data = {};
       }
-    } catch (error) {
-      logger.error('Failed to load database', { error: error.message });
-      throw error;
+    } else {
+      this.save();
+      logger.info('New database created');
+    }
+
+    // Start backup schedule
+    if (config.database. backupEnabled) {
+      this.startBackupSchedule();
     }
   }
 
   save() {
     try {
-      fs.writeFileSync(this.dbPath, JSON.stringify(this.data, null, 2), 'utf8');
-      logger.debug('Database saved');
+      fs.writeFileSync(this.dbPath, JSON.stringify(this.data, null, 2));
     } catch (error) {
-      logger.error('Failed to save database', { error: error.message });
-      throw error;
+      logger. error('Failed to save database', { error: error.message });
     }
+  }
+
+  startBackupSchedule() {
+    const intervalMs = config.database. backupInterval * 60 * 60 * 1000;
+    setInterval(() => this.backup(), intervalMs);
+    logger.info(`Database backup scheduled every ${config.database.backupInterval} hours`);
   }
 
   backup() {
     try {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const backupPath = this.dbPath.replace('.json', `-backup-${timestamp}.json`);
-      fs.copyFileSync(this.dbPath, backupPath);
+      const backupPath = `${this.dbPath}.backup. ${Date.now()}`;
+      fs.copyFileSync(this. dbPath, backupPath);
       logger.info('Database backup created', { path: backupPath });
-      this.cleanOldBackups();
     } catch (error) {
       logger.error('Failed to create backup', { error: error.message });
     }
   }
 
-  cleanOldBackups() {
-    try {
-      const dir = path.dirname(this.dbPath);
-      const files = fs.readdirSync(dir)
-        .filter(f => f.includes('-backup-'))
-        .map(f => ({
-          name: f,
-          path: path.join(dir, f),
-          time: fs.statSync(path.join(dir, f)).mtime.getTime()
-        }))
-        .sort((a, b) => b.time - a.time);
-
-      // Keep only last 7 backups
-      files.slice(7).forEach(file => {
-        fs.unlinkSync(file.path);
-        logger.debug('Deleted old backup', { file: file.name });
-      });
-    } catch (error) {
-      logger.error('Failed to clean old backups', { error: error.message });
-    }
-  }
-
-  startBackupSchedule() {
-    const intervalMs = config.database.backupInterval * 60 * 60 * 1000;
-    setInterval(() => this.backup(), intervalMs);
-    logger.info('Backup schedule started', { 
-      intervalHours: config.database.backupInterval 
-    });
-  }
-
   // Link wallet to Discord user
   linkWallet(discordId, walletAddress) {
-    const normalizedAddress = walletAddress.toLowerCase();
-    this.data.users[normalizedAddress] = {
+    const normalized = walletAddress.toLowerCase();
+    
+    // Check if wallet already linked to another user
+    for (const [wallet, data] of Object.entries(this.data)) {
+      if (wallet === normalized && data.discordId !== discordId) {
+        return { success: false, error: 'Wallet already linked to another user' };
+      }
+    }
+
+    // Check if user already has a wallet
+    const existingWallet = this.getWalletByDiscordId(discordId);
+    if (existingWallet) {
+      return { success: false, error: 'You already have a wallet linked', wallet: existingWallet };
+    }
+
+    this.data[normalized] = {
       discordId,
       linkedAt: new Date().toISOString(),
       attempts: 0,
-      verifications: {},
+      verifications: {}
     };
+
     this.save();
-    logger.info('Wallet linked', { wallet: normalizedAddress, discordId });
-    return this.data.users[normalizedAddress];
+    logger.info('Wallet linked', { discordId, wallet: normalized });
+    return { success: true };
   }
 
+  // Get wallet by Discord ID
+  getWalletByDiscordId(discordId) {
+    for (const [wallet, data] of Object. entries(this.data)) {
+      if (data.discordId === discordId) {
+        return wallet;
+      }
+    }
+    return null;
+  }
+
+  // Get user data by wallet
   getUserByWallet(walletAddress) {
-    return this.data.users[walletAddress.toLowerCase()];
+    return this.data[walletAddress. toLowerCase()] || null;
   }
 
+  // Get user data by Discord ID
   getUserByDiscordId(discordId) {
-    return Object.entries(this.data.users).find(
-      ([_, user]) => user.discordId === discordId
-    );
+    const wallet = this.getWalletByDiscordId(discordId);
+    if (! wallet) return null;
+    return { wallet, ... this.data[wallet] };
   }
 
-  // Mark verified for specific contract
-  markVerifiedForContract(walletAddress, contractId, txHash, blockNumber) {
-    const normalizedAddress = walletAddress.toLowerCase();
-    if (this.data.users[normalizedAddress]) {
-      if (!this.data.users[normalizedAddress].verifications) {
-        this.data.users[normalizedAddress].verifications = {};
-      }
-      
-      this.data.users[normalizedAddress].verifications[contractId] = {
-        verified: true,
-        txHash,
-        blockNumber,
-        verifiedAt: new Date().toISOString(),
-      };
-      
-      this.save();
-      logger.verification(true, normalizedAddress, { 
-        contractId, 
-        txHash, 
-        blockNumber 
-      });
-      return true;
+  // Record verification for a contract
+  recordVerification(walletAddress, contractId, txHash, blockNumber) {
+    const normalized = walletAddress. toLowerCase();
+    if (!this.data[normalized]) return false;
+
+    if (!this.data[normalized].verifications) {
+      this. data[normalized].verifications = {};
     }
-    return false;
-  }
 
-  // Get all verifications for a wallet
-  getVerifications(walletAddress) {
-    const normalizedAddress = walletAddress.toLowerCase();
-    const user = this.data.users[normalizedAddress];
-    return user?.verifications || {};
-  }
-
-  // Check if verified for specific contract
-  isVerifiedForContract(walletAddress, contractId) {
-    const verifications = this.getVerifications(walletAddress);
-    return !!verifications[contractId];
-  }
-
-  // Get list of contracts user is verified for
-  getVerifiedContracts(walletAddress) {
-    const verifications = this.getVerifications(walletAddress);
-    return Object.keys(verifications).map(contractId => 
-      config.getContractById(contractId)
-    ).filter(Boolean);
-  }
-
-  incrementAttempts(walletAddress) {
-    const normalizedAddress = walletAddress.toLowerCase();
-    if (this.data.users[normalizedAddress]) {
-      this.data.users[normalizedAddress].attempts += 1;
-      this.data.users[normalizedAddress].lastAttempt = new Date().toISOString();
-      this.save();
-    }
-  }
-
-  unlinkWallet(walletAddress) {
-    const normalizedAddress = walletAddress.toLowerCase();
-    if (this.data.users[normalizedAddress]) {
-      delete this.data.users[normalizedAddress];
-      this.save();
-      logger.info('Wallet unlinked', { wallet: normalizedAddress });
-      return true;
-    }
-    return false;
-  }
-
-  // Get all users pending verification for ANY contract
-  getAllUnverified() {
-    const unverified = [];
-    
-    Object.entries(this.data.users).forEach(([wallet, user]) => {
-      const verifications = user.verifications || {};
-      const verifiedContractIds = Object.keys(verifications);
-      const allContractIds = config.contracts.map(c => c.id);
-      
-      // Find contracts user hasn't verified for
-      const pendingContracts = allContractIds.filter(
-        id => !verifiedContractIds.includes(id)
-      );
-      
-      if (pendingContracts.length > 0) {
-        unverified.push({
-          wallet,
-          ...user,
-          pendingContracts,
-        });
-      }
-    });
-    
-    return unverified;
-  }
-
-  // Statistics - Multi-contract aware
-  getStats() {
-    const users = Object.values(this.data.users);
-    const stats = {
-      total: users.length,
-      linked: users.length,
-      totalVerifications: 0,
-      byContract: {},
+    this.data[normalized]. verifications[contractId] = {
+      verified: true,
+      txHash,
+      blockNumber,
+      verifiedAt: new Date(). toISOString()
     };
 
-    // Initialize contract stats
-    config.contracts.forEach(contract => {
-      stats.byContract[contract.id] = {
-        name: contract.name,
-        verified: 0,
-        pending: 0,
-      };
-    });
-
-    // Calculate stats
-    users.forEach(user => {
-      const verifications = user.verifications || {};
-      stats.totalVerifications += Object.keys(verifications).length;
-
-      config.contracts.forEach(contract => {
-        if (verifications[contract.id]) {
-          stats.byContract[contract.id].verified++;
-        } else {
-          stats.byContract[contract.id].pending++;
-        }
-      });
-    });
-
-    // Recent activity (last 24 hours)
-    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    
-    stats.recentLinks = users.filter(u => {
-      const linkedDate = new Date(u.linkedAt);
-      return linkedDate > dayAgo;
-    }).length;
-
-    stats.recentVerifications = 0;
-    users.forEach(user => {
-      const verifications = user.verifications || {};
-      Object.values(verifications).forEach(v => {
-        if (v.verifiedAt) {
-          const verifiedDate = new Date(v.verifiedAt);
-          if (verifiedDate > dayAgo) {
-            stats.recentVerifications++;
-          }
-        }
-      });
-    });
-
-    return stats;
+    this.save();
+    logger.info('Verification recorded', { wallet: normalized, contractId });
+    return true;
   }
 
-  exportData() {
-    return JSON.stringify(this.data, null, 2);
+  // Check if user is verified for a contract
+  isVerified(walletAddress, contractId) {
+    const normalized = walletAddress.toLowerCase();
+    const user = this.data[normalized];
+    if (!user || !user.verifications) return false;
+    return user.verifications[contractId]?.verified === true;
   }
 
-  importData(jsonData) {
-    try {
-      const imported = JSON.parse(jsonData);
-      this.data = imported;
+  // Get all verifications for a user
+  getVerifications(walletAddress) {
+    const normalized = walletAddress. toLowerCase();
+    const user = this.data[normalized];
+    if (!user) return {};
+    return user. verifications || {};
+  }
+
+  // Increment attempt counter
+  incrementAttempts(walletAddress) {
+    const normalized = walletAddress. toLowerCase();
+    if (this.data[normalized]) {
+      this.data[normalized]. attempts = (this.data[normalized].attempts || 0) + 1;
       this.save();
-      logger.info('Data imported successfully');
-      return true;
-    } catch (error) {
-      logger.error('Failed to import data', { error: error.message });
-      return false;
     }
+  }
+
+  // Get all users
+  getAllUsers() {
+    return this.data;
+  }
+
+  // Get statistics
+  getStats() {
+    const users = Object.values(this.data);
+    const totalUsers = users.length;
+    const verifiedUsers = users.filter(u => 
+      u.verifications && Object.values(u.verifications).some(v => v. verified)
+    ). length;
+
+    const contractStats = {};
+    for (const contract of config.contracts) {
+      contractStats[contract.id] = {
+        name: contract.name,
+        verified: users.filter(u => 
+          u.verifications? .[contract.id]?.verified
+        ).length
+      };
+    }
+
+    return {
+      totalUsers,
+      verifiedUsers,
+      pendingUsers: totalUsers - verifiedUsers,
+      contractStats
+    };
   }
 }
 
