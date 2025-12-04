@@ -40,6 +40,7 @@ const config = {
     combinedLogPath: './logs/combined.log',
     failedLogPath: process.env.FAILED_LOG_PATH || './logs/failed_verifications.json',
     successLogPath: process.env.SUCCESS_LOG_PATH || './logs/successful_verifications.json',
+    maxLogEntries: parseInt(process.env.MAX_LOG_ENTRIES) || 1000,
   },
 
   // Rate Limiting

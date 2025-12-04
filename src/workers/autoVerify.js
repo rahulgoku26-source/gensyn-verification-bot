@@ -154,6 +154,14 @@ class AutoVerifyWorker {
 
   async getRoleInfo(roleId) {
     try {
+      // Use configured guild ID if available
+      if (config.discord.guildId) {
+        const guild = this.client.guilds.cache.get(config.discord.guildId);
+        if (guild) {
+          return guild.roles.cache.get(roleId);
+        }
+      }
+      // Fallback to searching all guilds
       for (const guild of this.client.guilds.cache.values()) {
         const role = guild.roles.cache.get(roleId);
         if (role) {
@@ -168,7 +176,18 @@ class AutoVerifyWorker {
 
   async assignRole(discordId, roleId) {
     try {
-      for (const guild of this.client.guilds.cache.values()) {
+      // Use configured guild ID if available for better performance
+      const targetGuild = config.discord.guildId 
+        ? this.client.guilds.cache.get(config.discord.guildId)
+        : null;
+      
+      const guildsToCheck = targetGuild 
+        ? [targetGuild] 
+        : Array.from(this.client.guilds.cache.values());
+
+      for (const guild of guildsToCheck) {
+        if (!guild) continue;
+        
         const member = await guild.members.fetch(discordId).catch(() => null);
         if (member) {
           // Check if member already has the role
@@ -209,7 +228,18 @@ class AutoVerifyWorker {
     if (!config.discord.verificationChannelId) return;
 
     try {
-      for (const guild of this.client.guilds.cache.values()) {
+      // Use configured guild ID if available for better performance
+      const targetGuild = config.discord.guildId 
+        ? this.client.guilds.cache.get(config.discord.guildId)
+        : null;
+      
+      const guildsToCheck = targetGuild 
+        ? [targetGuild] 
+        : Array.from(this.client.guilds.cache.values());
+
+      for (const guild of guildsToCheck) {
+        if (!guild) continue;
+        
         const channel = guild.channels.cache.get(config.discord.verificationChannelId);
         if (channel) {
           const embed = new EmbedBuilder()

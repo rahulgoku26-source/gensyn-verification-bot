@@ -110,11 +110,18 @@ class BlockchainService {
   // Check if wallet has interacted with a specific contract
   async hasInteractedWithContract(walletAddress, contractAddress, contractId = null) {
     try {
+      const currentBlock = await this.getCurrentBlock(contractId);
+      if (!currentBlock) return false;
+      
+      // Use searchBlocks config to limit search range
+      const searchBlocks = config.blockchain.searchBlocks;
+      const fromBlock = Math.max(0, currentBlock - searchBlocks);
+      
       const result = await this.findTransactionToContract(
         walletAddress,
         contractAddress,
-        0,
-        await this.getCurrentBlock(contractId),
+        fromBlock,
+        currentBlock,
         contractId
       );
       return result.found;

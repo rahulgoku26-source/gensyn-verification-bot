@@ -268,7 +268,7 @@ async function handleExport(interaction) {
     const embed = new EmbedBuilder()
       .setTitle('📤 Data Export')
       .setColor(0x00ff00)
-      .setDescription('Complete database export attached below.')
+      .setDescription('Complete database export attached below.\n\n⚠️ **Note:** This export contains Discord IDs and wallet addresses. Handle this data responsibly.')
       .addFields(
         { name: '👥 Total Users', value: Object.keys(allData.users).length.toString(), inline: true },
         { name: '✅ Successes Logged', value: allData.successfulVerifications.length.toString(), inline: true },

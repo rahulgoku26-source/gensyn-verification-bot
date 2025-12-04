@@ -249,9 +249,10 @@ class Database {
       timestamp
     });
 
-    // Keep only last 1000 failed verifications to prevent file from growing too large
-    if (this.failedVerifications.length > 1000) {
-      this.failedVerifications = this.failedVerifications.slice(-1000);
+    // Keep only configured number of failed verifications to prevent file from growing too large
+    const maxEntries = config.logging.maxLogEntries;
+    if (this.failedVerifications.length > maxEntries) {
+      this.failedVerifications = this.failedVerifications.slice(-maxEntries);
     }
 
     this.saveFailedLog();
@@ -261,9 +262,10 @@ class Database {
   recordSuccessfulVerification(data) {
     this.successfulVerifications.push(data);
 
-    // Keep only last 1000 successful verifications
-    if (this.successfulVerifications.length > 1000) {
-      this.successfulVerifications = this.successfulVerifications.slice(-1000);
+    // Keep only configured number of successful verifications
+    const maxEntries = config.logging.maxLogEntries;
+    if (this.successfulVerifications.length > maxEntries) {
+      this.successfulVerifications = this.successfulVerifications.slice(-maxEntries);
     }
 
     this.saveSuccessLog();
