@@ -76,7 +76,9 @@ const config = {
     maxConcurrentVerifications: parseInt(process.env.MAX_CONCURRENT_VERIFICATIONS) || 10,
     delayBetweenChecks: parseInt(process.env.DELAY_BETWEEN_CHECKS) || 100,
     batchSize: parseInt(process.env.BATCH_SIZE) || 50,
-    cacheTTL: parseInt(process.env.CACHE_TTL) || 300, // 5 minutes in seconds
+    cacheTTL: parseInt(process.env.CACHE_TTL) || 3600, // 1 hour in seconds (changed from 5 minutes)
+    maxConcurrent: parseInt(process.env.MAX_CONCURRENT) || 10,
+    requestsPerSecond: parseInt(process.env.REQUESTS_PER_SECOND) || 10,
   },
 };
 

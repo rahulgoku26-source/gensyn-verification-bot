@@ -1,6 +1,6 @@
 # 🤖 Gensyn Discord Verification Bot
 
-A high-performance Discord bot for verifying smart contract interactions on Gensyn Testnet using the **Block Explorer API**. Supports multi-contract verification, password protection, and optimized for **500-600 users/minute**.
+A high-performance Discord bot for verifying smart contract interactions on Gensyn Testnet using the **Block Explorer API**. Supports multi-contract verification, password protection, and optimized for **200-400 users/minute**.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen)](https://nodejs.org/)
@@ -8,10 +8,10 @@ A high-performance Discord bot for verifying smart contract interactions on Gens
 ## ✨ Features
 
 ### Core Features
-- 🔗 **Block Explorer API Integration**: Uses `txlistinternal` endpoint for accurate transaction tracking
+- 🔗 **Block Explorer API Integration**: Uses `txlistinternal` endpoint with two-step verification (wallet txns → tx traces)
 - 🎭 **Multi-Contract Support**: Verify against up to 20 contracts with different Discord roles
-- 📊 **Transaction Count Verification**: Minimum 3 transactions required per contract
-- ⚡ **High Performance**: 500-600 users/minute with parallel processing
+- 📊 **Transaction Count Verification**: Minimum 3 unique transactions required per contract
+- ⚡ **High Performance**: 200-400 users/minute with parallel processing
 - 🤖 **Auto-Verification**: Automatically checks and verifies users
 
 ### Security Features
@@ -20,10 +20,11 @@ A high-performance Discord bot for verifying smart contract interactions on Gens
 - 🛡️ **Token Masking**: Sensitive data hidden in logs
 
 ### Performance Features
-- 🚀 **Parallel Processing**: All 4 contracts checked simultaneously
-- 📦 **Batch Processing**: 50 users per batch
-- 💾 **API Caching**: 5-minute TTL for faster repeated checks
-- ⏱️ **Rate Limiting**: 100 requests/minute to Explorer API
+- 🚀 **Parallel Processing**: All contracts checked simultaneously with batched parallel API calls
+- 📦 **Batch Processing**: 50 users per batch with concurrency limit
+- 💾 **API Caching**: 1-hour TTL for faster repeated checks
+- ⏱️ **Rate Limiting**: 10 requests/second to Explorer API
+- 🔄 **Retry Logic**: Exponential backoff on 502/504 errors
 
 ### Logging Features
 - 📝 **Simple Log Format**: Easy-to-read one-line entries
@@ -118,14 +119,13 @@ CONTRACT_5_ROLE_ID=your_discord_role_id
 ### Performance Tuning
 
 ```env
-# For 500-600 users/min:
+# For 200-400 users/min:
 BATCH_SIZE=50
-CACHE_TTL=300
+CACHE_TTL=3600
 AUTO_VERIFY_BATCH_SIZE=50
 MAX_CONCURRENT_VERIFICATIONS=10
-
-# Explorer API rate limit
-EXPLORER_API_RATE=100
+MAX_CONCURRENT=10
+REQUESTS_PER_SECOND=10
 ```
 
 ### Security Configuration
@@ -147,23 +147,55 @@ MASTER_PASSWORD=your_secure_password
 ### Verification Flow
 
 1. **User links wallet**: `/link wallet:0xYourAddress`
-2. **User interacts with contracts**: Send at least 3 transactions
+2. **User interacts with contracts**: Send at least 3 unique transactions
 3. **User verifies**: `/verify`
-4. **Bot checks**: Uses Block Explorer API (`txlistinternal`)
-5. **Role assigned**: If ≥3 transactions found per contract
+4. **Bot checks**: Uses Block Explorer API (two-step verification)
+5. **Role assigned**: If ≥3 unique transaction hashes found per contract
 
 ### API Details
 
-**Endpoint Used:**
+**Endpoints Used:**
 ```
-https://gensyn-testnet.explorer.alchemy.com/api?module=account&action=txlistinternal&address=WALLET_ADDRESS
+Base URL: https://gensyn-testnet.explorer.alchemy.com/api
+
+# Step 1: Get wallet's internal txns (returns parent tx hashes)
+GET ?module=account&action=txlistinternal&address={wallet}
+
+# Step 2: Get full trace for each transaction
+GET ?module=account&action=txlistinternal&txhash={txHash}
 ```
 
-**Logic:**
-- Fetches internal transactions for the wallet
-- Filters by contract address (checks both `to` and `from` fields)
-- Counts transactions per contract
-- Requires minimum 3 transactions to pass verification
+**Verification Logic:**
+```javascript
+// Step 1: Get wallet's internal transactions
+const walletTxns = await fetch(
+  `${API}?module=account&action=txlistinternal&address=${walletAddress}`
+);
+
+// Step 2: Get unique parent transaction hashes
+const txHashes = [...new Set(walletTxns.result.map(tx => tx.transactionHash))];
+
+// Step 3: Fetch all transaction traces in PARALLEL
+const traces = await Promise.all(
+  txHashes.map(hash => 
+    fetch(`${API}?module=account&action=txlistinternal&txhash=${hash}`)
+  )
+);
+
+// Step 4: Flatten all internal txns from all traces
+const allInternalTxns = traces.flatMap(t => t.result);
+
+// Step 5: For each contract, find matching transactions
+const matchingTxns = allInternalTxns.filter(tx =>
+  tx.to?.toLowerCase() === contractAddress.toLowerCase() ||
+  tx.from?.toLowerCase() === contractAddress.toLowerCase() ||
+  tx.contractAddress?.toLowerCase() === contractAddress.toLowerCase()
+);
+
+// Step 6: Count unique transaction hashes (not individual internal calls)
+const uniqueTxHashes = [...new Set(matchingTxns.map(tx => tx.transactionHash))];
+const verified = uniqueTxHashes.length >= 3;
+```
 
 ### Log Format
 
@@ -212,11 +244,14 @@ docker run -d --env-file .env gensyn-bot
 
 | Metric | Value |
 |--------|-------|
-| Users per minute | 500-600 |
-| API calls (cached) | ~100/min |
+| Time per user | 1-3 seconds |
+| Users per minute | 200-400 |
+| Parallel users | 50 at a time |
+| Cache TTL | 1 hour |
+| Backup interval | 1 hour |
+| API retries | 3 with exponential backoff |
+| API rate limit | 10 requests/second |
 | Memory usage | ~50-100 MB |
-| Batch size | 50 users |
-| Cache TTL | 5 minutes |
 
 ## 🔧 Troubleshooting
 
@@ -258,8 +293,11 @@ docker run -d --env-file .env gensyn-bot
 ### Explorer API
 
 ```javascript
-// Fetch internal transactions
-const url = `https://gensyn-testnet.explorer.alchemy.com/api?module=account&action=txlistinternal&address=${walletAddress}`;
+// Step 1: Fetch wallet's internal transactions (get parent tx hashes)
+const walletUrl = `https://gensyn-testnet.explorer.alchemy.com/api?module=account&action=txlistinternal&address=${walletAddress}`;
+
+// Step 2: Fetch transaction trace for each parent tx hash
+const traceUrl = `https://gensyn-testnet.explorer.alchemy.com/api?module=account&action=txlistinternal&txhash=${txHash}`;
 
 // Response format
 {
@@ -268,8 +306,10 @@ const url = `https://gensyn-testnet.explorer.alchemy.com/api?module=account&acti
   "result": [
     {
       "hash": "0x...",
+      "transactionHash": "0x...",
       "from": "0x...",
       "to": "0x...",
+      "contractAddress": "0x...",
       "blockNumber": "123456",
       ...
     }
@@ -280,12 +320,19 @@ const url = `https://gensyn-testnet.explorer.alchemy.com/api?module=account&acti
 ### Verification Logic
 
 ```javascript
-// Check if wallet qualifies
-const transactions = await getInternalTransactions(walletAddress);
-const contractTxns = transactions.filter(tx => 
-  tx.to === contractAddress || tx.from === contractAddress
+// Check if wallet qualifies using the correct two-step approach
+const allInternalTxns = await getAllInternalTransactions(walletAddress);
+
+// Find matching transactions for contract
+const matchingTxns = allInternalTxns.filter(tx =>
+  tx.to?.toLowerCase() === contractAddress.toLowerCase() ||
+  tx.from?.toLowerCase() === contractAddress.toLowerCase() ||
+  tx.contractAddress?.toLowerCase() === contractAddress.toLowerCase()
 );
-const qualifies = contractTxns.length >= MIN_TRANSACTIONS; // Default: 3
+
+// Count UNIQUE transaction hashes (not individual internal calls)
+const uniqueTxHashes = [...new Set(matchingTxns.map(tx => tx.transactionHash))];
+const qualifies = uniqueTxHashes.length >= MIN_TRANSACTIONS; // Default: 3
 ```
 
 ## 📁 File Structure
@@ -304,15 +351,24 @@ src/
 │   ├── stats.js             # Statistics
 │   └── verify.js            # Verification command
 ├── services/
-│   ├── explorerApi.js       # Block Explorer API service
+│   ├── explorerApi.js       # Block Explorer API service with caching
 │   ├── database.js          # Database with flat format
 │   └── blockchain.js        # Legacy (deprecated)
 ├── utils/
 │   ├── security.js          # AES-256 encryption
 │   ├── logger.js            # Logging utility
-│   └── performance.js       # Batch processing
+│   └── performance.js       # Batch processing, rate limiting
 └── workers/
     └── autoVerify.js        # Auto-verification worker
+
+data/
+├── users.json               # User database (encrypted if password set)
+└── backups/                 # Hourly backups (encrypted)
+
+logs/
+├── failed.txt               # Failed verifications log
+├── success.txt              # Successful verifications log
+└── audit.log                # Audit log (encrypted)
 ```
 
 ## 🙏 Credits
