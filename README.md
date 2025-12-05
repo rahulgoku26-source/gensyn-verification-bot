@@ -36,7 +36,7 @@ A high-performance Discord bot for verifying smart contract interactions on Gens
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/gensyn-verification-bot.git
+git clone https://github.com/rahulgoku26-source/gensyn-verification-bot.git
 cd gensyn-verification-bot
 npm install
 ```
