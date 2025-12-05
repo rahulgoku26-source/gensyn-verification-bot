@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const database = require('../services/database');
+const explorerApi = require('../services/explorerApi');
 const config = require('../config/config');
 
 module.exports = {
@@ -8,13 +9,14 @@ module.exports = {
     .setDescription('Check your verification status'),
 
   async execute(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+
     const discordId = interaction.user.id;
     const userData = database.getUserByDiscordId(discordId);
 
     if (!userData) {
-      return interaction.reply({
+      return interaction.editReply({
         content: '❌ You have not linked a wallet yet.\n\nUse `/link wallet:0xYourAddress` to get started.',
-        ephemeral: true
       });
     }
 
@@ -28,6 +30,10 @@ module.exports = {
     const currentRoles = config.contracts
       .filter(c => member.roles.cache.has(c.roleId))
       .map(c => c.name);
+
+    // Get live transaction counts from Explorer API
+    const walletSummary = await explorerApi.getWalletSummary(userData.wallet);
+    const minTxns = config.explorer.minTransactions;
 
     // Progress bar
     const progressBar = createProgressBar(percentage);
@@ -43,7 +49,7 @@ module.exports = {
       )
       .setTimestamp();
 
-    // Add per-contract status
+    // Add per-contract status with transaction counts
     let contractStatus = '';
     for (const contract of config.contracts) {
       const verification = verifications[contract.id];
@@ -51,17 +57,26 @@ module.exports = {
       const role = interaction.guild.roles.cache.get(contract.roleId);
       const roleName = role?.name || contract.name;
 
+      // Get live transaction count if available
+      let liveTxnCount = 0;
+      if (walletSummary.success && walletSummary.summary[contract.id]) {
+        liveTxnCount = walletSummary.summary[contract.id].txnCount;
+      }
+      
+      // Use stored txn count if no live data
+      const txnCount = liveTxnCount || verification?.txnCount || 0;
+      const txnStatus = txnCount >= minTxns ? '✅' : `❌ (need ${minTxns - txnCount} more)`;
+
       if (verification?.verified) {
         const verifiedDate = new Date(verification.verifiedAt).toLocaleDateString();
         contractStatus += `✅ **${contract.name}**\n`;
         contractStatus += `   Role: ${roleName} ${hasRole ? '✅' : '⚠️ Missing'}\n`;
+        contractStatus += `   Transactions: ${txnCount} ${txnStatus}\n`;
         contractStatus += `   Verified: ${verifiedDate}\n`;
-        if (verification.txHash) {
-          contractStatus += `   TX: \`${verification.txHash.substring(0, 16)}...\`\n`;
-        }
       } else {
         contractStatus += `❌ **${contract.name}**\n`;
         contractStatus += `   Role: ${roleName}\n`;
+        contractStatus += `   Transactions: ${txnCount}/${minTxns} ${txnStatus}\n`;
         contractStatus += `   Status: Not verified\n`;
       }
       contractStatus += '\n';
@@ -100,7 +115,10 @@ module.exports = {
       });
     }
 
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    // Add min transactions info
+    embed.setFooter({ text: `Minimum ${minTxns} transactions required per contract | Data via Block Explorer API` });
+
+    return interaction.editReply({ embeds: [embed] });
   }
 };
 

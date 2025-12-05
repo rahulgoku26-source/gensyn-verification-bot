@@ -41,7 +41,16 @@ module.exports = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('export')
-        .setDescription('Export all data as JSON')
+        .setDescription('Export all data as JSON or TXT')
+        .addStringOption(option =>
+          option.setName('format')
+            .setDescription('Export format')
+            .setRequired(false)
+            .addChoices(
+              { name: 'JSON', value: 'json' },
+              { name: 'TXT (Flat)', value: 'txt' }
+            )
+        )
     ),
 
   async execute(interaction) {
@@ -79,29 +88,26 @@ async function handleFailures(interaction) {
   const embed = new EmbedBuilder()
     .setTitle('❌ Recent Failed Verifications')
     .setColor(0xff0000)
-    .setDescription(`Showing last ${failures.length} failed verifications`)
+    .setDescription(`Showing last ${Math.min(failures.length, 10)} failed verifications (simple log format)`)
     .setTimestamp();
 
-  // Group failures by user
-  let failureText = '';
-  for (const failure of failures.slice(0, 10)) {
-    const timestamp = new Date(failure.timestamp).toLocaleString();
-    const username = failure.discordUsername || 'Unknown';
-    const wallet = failure.walletAddress 
-      ? `${failure.walletAddress.substring(0, 10)}...` 
-      : 'N/A';
-    
-    failureText += `**${username}** - ${failure.contractName}\n`;
-    failureText += `📅 ${timestamp}\n`;
-    failureText += `💼 Wallet: \`${wallet}\`\n`;
-    failureText += `❌ Reason: ${failure.reason}\n\n`;
+  // Show log entries directly (they're already formatted)
+  const logText = failures.slice(0, 10).join('\n\n');
+  
+  // Split if too long
+  if (logText.length > 1024) {
+    embed.addFields({
+      name: 'Failed Verifications',
+      value: logText.substring(0, 1020) + '...',
+      inline: false
+    });
+  } else {
+    embed.addFields({
+      name: 'Failed Verifications',
+      value: logText || 'No data',
+      inline: false
+    });
   }
-
-  embed.addFields({
-    name: 'Failed Verifications',
-    value: failureText || 'No data',
-    inline: false
-  });
 
   // Summary stats
   const totalFailures = database.getFailedVerifications(1000).length;
@@ -125,32 +131,26 @@ async function handleSuccesses(interaction) {
   const embed = new EmbedBuilder()
     .setTitle('✅ Recent Successful Verifications')
     .setColor(0x00ff00)
-    .setDescription(`Showing last ${successes.length} successful verifications`)
+    .setDescription(`Showing last ${Math.min(successes.length, 10)} successful verifications (simple log format)`)
     .setTimestamp();
 
-  let successText = '';
-  for (const success of successes.slice(0, 10)) {
-    const timestamp = new Date(success.timestamp).toLocaleString();
-    const username = success.discordUsername || 'Unknown';
-    const wallet = success.walletAddress 
-      ? `${success.walletAddress.substring(0, 10)}...` 
-      : 'N/A';
-    
-    successText += `**${username}** - ${success.contractName}\n`;
-    successText += `📅 ${timestamp}\n`;
-    successText += `💼 Wallet: \`${wallet}\`\n`;
-    successText += `🎭 Role: ${success.roleName || 'N/A'}\n`;
-    if (success.txHash) {
-      successText += `🔗 TX: \`${success.txHash.substring(0, 16)}...\`\n`;
-    }
-    successText += '\n';
+  // Show log entries directly (they're already formatted)
+  const logText = successes.slice(0, 10).join('\n\n');
+  
+  // Split if too long
+  if (logText.length > 1024) {
+    embed.addFields({
+      name: 'Successful Verifications',
+      value: logText.substring(0, 1020) + '...',
+      inline: false
+    });
+  } else {
+    embed.addFields({
+      name: 'Successful Verifications',
+      value: logText || 'No data',
+      inline: false
+    });
   }
-
-  embed.addFields({
-    name: 'Successful Verifications',
-    value: successText || 'No data',
-    inline: false
-  });
 
   // Summary stats
   const totalSuccesses = database.getSuccessfulVerifications(1000).length;
@@ -208,21 +208,23 @@ async function handleUserLookup(interaction) {
     inline: true
   });
 
-  // Contract status
+  // Contract status with txn counts
   let contractStatus = '';
+  const minTxns = config.explorer.minTransactions;
+  
   for (const contract of config.contracts) {
     const verification = verifications[contract.id];
     const hasRole = member?.roles.cache.has(contract.roleId);
+    const txnCount = verification?.txnCount || 0;
     
     if (verification?.verified) {
       contractStatus += `✅ **${contract.name}**\n`;
       contractStatus += `   Verified: ${new Date(verification.verifiedAt).toLocaleDateString()}\n`;
+      contractStatus += `   Transactions: ${txnCount}\n`;
       contractStatus += `   Role: ${hasRole ? '✅ Has role' : '⚠️ Missing role'}\n`;
-      if (verification.txHash) {
-        contractStatus += `   TX: \`${verification.txHash.substring(0, 16)}...\`\n`;
-      }
     } else {
       contractStatus += `❌ **${contract.name}** - Not verified\n`;
+      contractStatus += `   Transactions: ${txnCount}/${minTxns}\n`;
     }
   }
 
@@ -254,32 +256,49 @@ async function handleExport(interaction) {
   await interaction.deferReply({ ephemeral: true });
 
   try {
-    const allData = database.exportAllData();
-    const jsonString = JSON.stringify(allData, null, 2);
+    const format = interaction.options.getString('format') || 'json';
     
-    // Create buffer from JSON string
-    const buffer = Buffer.from(jsonString, 'utf-8');
+    let data;
+    let filename;
+    let mimeType;
+    
+    if (format === 'txt') {
+      // Export as flat TXT format
+      data = database.exportFlatFormat();
+      filename = `verification-data-${Date.now()}.txt`;
+      mimeType = 'text/plain';
+    } else {
+      // Export as JSON
+      const allData = database.exportAllData();
+      data = JSON.stringify(allData, null, 2);
+      filename = `verification-data-${Date.now()}.json`;
+      mimeType = 'application/json';
+    }
+    
+    // Create buffer from string
+    const buffer = Buffer.from(data, 'utf-8');
     
     // Create attachment
-    const attachment = new AttachmentBuilder(buffer, { 
-      name: `verification-data-${Date.now()}.json` 
-    });
+    const attachment = new AttachmentBuilder(buffer, { name: filename });
 
+    const stats = database.getStats();
+    
     const embed = new EmbedBuilder()
       .setTitle('📤 Data Export')
       .setColor(0x00ff00)
-      .setDescription('Complete database export attached below.\n\n⚠️ **Note:** This export contains Discord IDs and wallet addresses. Handle this data responsibly.')
+      .setDescription(`Complete database export attached below (${format.toUpperCase()} format).\n\n⚠️ **Note:** This export contains Discord IDs and wallet addresses. Handle this data responsibly.`)
       .addFields(
-        { name: '👥 Total Users', value: Object.keys(allData.users).length.toString(), inline: true },
-        { name: '✅ Successes Logged', value: allData.successfulVerifications.length.toString(), inline: true },
-        { name: '❌ Failures Logged', value: allData.failedVerifications.length.toString(), inline: true },
-        { name: '📅 Export Time', value: new Date(allData.exportedAt).toLocaleString(), inline: false }
+        { name: '👥 Total Users', value: stats.totalUsers.toString(), inline: true },
+        { name: '✅ Verified Users', value: stats.verifiedUsers.toString(), inline: true },
+        { name: '📋 Format', value: format.toUpperCase(), inline: true },
+        { name: '📅 Export Time', value: new Date().toLocaleString(), inline: false }
       )
       .setTimestamp();
 
     logger.info('Data export requested', { 
       user: interaction.user.tag,
-      totalUsers: Object.keys(allData.users).length 
+      format,
+      totalUsers: stats.totalUsers
     });
 
     return interaction.editReply({ 

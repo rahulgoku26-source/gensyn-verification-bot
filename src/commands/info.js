@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const blockchain = require('../services/blockchain');
+const explorerApi = require('../services/explorerApi');
 const config = require('../config/config');
 
 module.exports = {
@@ -14,7 +14,7 @@ module.exports = {
   
   async execute(interaction) {
     const specificContract = interaction.options.getString('contract');
-    const currentBlock = await blockchain.getCurrentBlock() || 'Unknown';
+    const minTxns = config.explorer.minTransactions;
     
     if (specificContract) {
       // Show info for specific contract
@@ -23,21 +23,21 @@ module.exports = {
       const embed = new EmbedBuilder()
         .setColor(0x0099ff)
         .setTitle(`🔷 ${contract.name}`)
-        .setDescription(contract.description || 'Smart contract verification details')
+        .setDescription('Smart contract verification details (via Block Explorer API)')
         .addFields(
           { name: 'Network', value: config.blockchain.chainName, inline: true },
           { name: 'Chain ID', value: config.blockchain.chainId, inline: true },
-          { name: 'Current Block', value: currentBlock.toString(), inline: true },
+          { name: 'Min Transactions', value: `${minTxns}`, inline: true },
           { name: 'Contract Address', value: `\`${contract.address}\``, inline: false },
           { name: 'Role Assigned', value: `<@&${contract.roleId}>`, inline: true },
-          { name: 'Required Confirmations', value: `${config.blockchain.minConfirmations}`, inline: true },
+          { name: 'API Method', value: 'txlistinternal', inline: true },
           { 
             name: '📋 How to Verify', 
-            value: `1. \`/link wallet:YOUR_ADDRESS\`\n2. Send a transaction to this contract\n3. \`/verify contract:${contract.name}\` or just \`/verify\``,
+            value: `1. \`/link wallet:YOUR_ADDRESS\`\n2. Send **at least ${minTxns} transactions** to this contract\n3. \`/verify contract:${contract.name}\` or just \`/verify\``,
             inline: false
           }
         )
-        .setFooter({ text: 'Gensyn Testnet Verification Bot' })
+        .setFooter({ text: 'Gensyn Testnet Verification Bot | Block Explorer API' })
         .setTimestamp();
       
       return interaction.reply({ embeds: [embed], ephemeral: true });
@@ -47,11 +47,11 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setColor(0x0099ff)
       .setTitle('🌐 All Available Contracts')
-      .setDescription(`We support **${config.contracts.length} contract(s)** for verification on ${config.blockchain.chainName}`)
+      .setDescription(`We support **${config.contracts.length} contract(s)** for verification on ${config.blockchain.chainName}\n\n**Minimum ${minTxns} transactions** required per contract`)
       .addFields(
         { name: 'Network', value: config.blockchain.chainName, inline: true },
         { name: 'Chain ID', value: config.blockchain.chainId, inline: true },
-        { name: 'Current Block', value: currentBlock.toString(), inline: true }
+        { name: 'API', value: 'Block Explorer', inline: true }
       );
     
     // Add each contract as a field
@@ -66,11 +66,11 @@ module.exports = {
     
     embed.addFields({
       name: '📋 How to Get Verified',
-      value: '1. `/link wallet:YOUR_ADDRESS` - Link your wallet\n2. Send a transaction to any contract above\n3. `/verify` - Check all contracts OR `/verify contract:Name` - Check specific contract',
+      value: `1. \`/link wallet:YOUR_ADDRESS\` - Link your wallet\n2. Send **at least ${minTxns} transactions** to any contract above\n3. \`/verify\` - Check all contracts OR \`/verify contract:Name\` - Check specific contract`,
       inline: false
     });
     
-    embed.setFooter({ text: 'Use /info contract:Name for detailed contract info' });
+    embed.setFooter({ text: 'Use /info contract:Name for detailed contract info | Block Explorer API' });
     embed.setTimestamp();
     
     return interaction.reply({ embeds: [embed], ephemeral: true });

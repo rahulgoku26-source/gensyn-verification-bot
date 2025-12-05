@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const database = require('../services/database');
-const blockchain = require('../services/blockchain');
+const explorerApi = require('../services/explorerApi');
 const config = require('../config/config');
 const logger = require('../utils/logger');
 
@@ -53,11 +53,11 @@ module.exports = {
           });
         }
 
-        const result = await blockchain.verifySingleContract(wallet, contract.id);
-        results = [{ ...result, contractId: contract.id, contractName: contract.name, roleId: contract.roleId }];
+        const result = await explorerApi.verifySingleContract(wallet, contract);
+        results = [result];
       } else {
-        // Verify all contracts
-        results = await blockchain.verifyAllContracts(wallet);
+        // Verify all contracts in parallel
+        results = await explorerApi.verifyAllContracts(wallet);
       }
 
       // Process results and assign roles
@@ -72,7 +72,8 @@ module.exports = {
           alreadyVerified.push({
             name: result.contractName,
             roleName: role?.name || result.contractName,
-            hasRole: member.roles.cache.has(result.roleId)
+            hasRole: member.roles.cache.has(result.roleId),
+            txnCount: result.txnCount || 0
           });
           continue;
         }
@@ -82,14 +83,15 @@ module.exports = {
           const role = interaction.guild.roles.cache.get(result.roleId);
           const roleName = role?.name || result.contractName;
 
-          // Record verification with role tracking
+          // Record verification with txn count
           database.recordVerification(
             wallet, 
             result.contractId, 
             result.hash, 
             result.blockNumber,
             result.roleId,
-            roleName
+            roleName,
+            result.txnCount
           );
           
           // Assign role (incremental - doesn't remove existing roles)
@@ -100,6 +102,7 @@ module.exports = {
                 name: result.contractName,
                 role: roleName,
                 txHash: result.hash,
+                txnCount: result.txnCount,
                 isNew: true
               });
             } else if (member.roles.cache.has(result.roleId)) {
@@ -107,6 +110,7 @@ module.exports = {
                 name: result.contractName,
                 role: roleName,
                 txHash: result.hash,
+                txnCount: result.txnCount,
                 isNew: false
               });
             }
@@ -116,6 +120,7 @@ module.exports = {
               name: result.contractName,
               role: roleName,
               txHash: result.hash,
+              txnCount: result.txnCount,
               isNew: false,
               error: 'Failed to assign role'
             });
@@ -123,7 +128,8 @@ module.exports = {
         } else {
           failedVerifications.push({
             name: result.contractName,
-            error: result.error
+            error: result.error,
+            txnCount: result.txnCount || 0
           });
 
           // Record failed verification
@@ -133,6 +139,7 @@ module.exports = {
             walletAddress: wallet,
             contractId: result.contractId,
             contractName: result.contractName,
+            txnCount: result.txnCount || 0,
             reason: result.error
           });
         }
@@ -146,7 +153,7 @@ module.exports = {
       const embed = new EmbedBuilder()
         .setTitle('🔍 Verification Results')
         .setColor(newlyVerified.length > 0 ? 0x00ff00 : (verifiedCount > 0 ? 0xffaa00 : 0xff0000))
-        .setDescription(`**Progress:** ${verifiedCount}/${totalContracts} contracts verified (${progressPercent}%)`)
+        .setDescription(`**Progress:** ${verifiedCount}/${totalContracts} contracts verified (${progressPercent}%)\n**Min Transactions Required:** ${config.explorer.minTransactions}`)
         .setTimestamp();
 
       // Newly verified
@@ -158,7 +165,7 @@ module.exports = {
           embed.addFields({
             name: '✅ Newly Verified',
             value: newRoles.map(v => 
-              `**${v.name}** → Role: ${v.role}\n\`${v.txHash.substring(0, 20)}...\``
+              `**${v.name}** → Role: ${v.role}\nTransactions: ${v.txnCount}`
             ).join('\n\n'),
             inline: false
           });
@@ -168,7 +175,7 @@ module.exports = {
           embed.addFields({
             name: '✅ Verified (Role Already Assigned)',
             value: existingRoles.map(v => 
-              `**${v.name}** → Role: ${v.role}`
+              `**${v.name}** → Role: ${v.role} (${v.txnCount} txns)`
             ).join('\n'),
             inline: false
           });
@@ -180,7 +187,7 @@ module.exports = {
         embed.addFields({
           name: '📋 Previously Verified',
           value: alreadyVerified.map(v => 
-            `**${v.name}** → ${v.roleName} ${v.hasRole ? '✅' : '⚠️ (Role missing)'}`
+            `**${v.name}** → ${v.roleName} ${v.hasRole ? '✅' : '⚠️ (Role missing)'} (${v.txnCount} txns)`
           ).join('\n'),
           inline: false
         });
@@ -191,7 +198,7 @@ module.exports = {
         embed.addFields({
           name: '❌ Not Verified',
           value: failedVerifications.map(v => 
-            `**${v.name}**: ${v.error}`
+            `**${v.name}**: ${v.error} (${v.txnCount} txns found)`
           ).join('\n'),
           inline: false
         });
@@ -221,7 +228,7 @@ module.exports = {
               .setDescription(`${interaction.user} has been verified!`)
               .addFields({
                 name: 'Contracts',
-                value: newlyVerified.filter(v => v.isNew).map(v => `✅ ${v.name} → ${v.role}`).join('\n')
+                value: newlyVerified.filter(v => v.isNew).map(v => `✅ ${v.name} → ${v.role} (${v.txnCount} txns)`).join('\n')
               })
               .setTimestamp();
             
