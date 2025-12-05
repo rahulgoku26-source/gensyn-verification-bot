@@ -20,12 +20,11 @@ A high-performance Discord bot for verifying smart contract interactions on Gens
 - 🛡️ **Token Masking**: Sensitive data hidden in logs
 
 ### Performance Features
-- 🚀 **Parallel Processing**: All contracts checked simultaneously with parallel API calls
-- 📦 **Batch Processing**: 50 users per batch
+- 🚀 **Parallel Processing**: All contracts checked simultaneously with batched parallel API calls
+- 📦 **Batch Processing**: 50 users per batch with concurrency limit
 - 💾 **API Caching**: 1-hour TTL for faster repeated checks
 - ⏱️ **Rate Limiting**: 10 requests/second to Explorer API
 - 🔄 **Retry Logic**: Exponential backoff on 502/504 errors
-- 🌐 **Connection Pooling**: HTTP keep-alive with 50 max sockets
 
 ### Logging Features
 - 📝 **Simple Log Format**: Easy-to-read one-line entries

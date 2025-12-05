@@ -1,7 +1,5 @@
 const config = require('../config/config');
 const logger = require('../utils/logger');
-const http = require('http');
-const https = require('https');
 
 class ExplorerApiService {
   constructor() {
@@ -11,10 +9,6 @@ class ExplorerApiService {
     this.requestCount = 0;
     this.requestWindow = 60000; // 1 minute window
     this.windowStart = Date.now();
-    
-    // Connection pooling for better performance
-    this.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 50 });
-    this.httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50 });
   }
 
   /**
@@ -76,15 +70,15 @@ class ExplorerApiService {
    */
   async fetchWithRetry(url, retries = 3) {
     for (let i = 0; i < retries; i++) {
+      let timeoutId;
       try {
         await this.waitForRateLimit();
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+        timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
         
         const response = await fetch(url, { 
-          signal: controller.signal,
-          agent: url.startsWith('https') ? this.httpsAgent : this.httpAgent
+          signal: controller.signal
         });
         
         clearTimeout(timeoutId);
@@ -93,8 +87,9 @@ class ExplorerApiService {
           return await response.json();
         }
         
-        // Retry on 502 or 504 errors
-        if (response.status === 504 || response.status === 502) {
+        // Retry on 502, 503, 504, or 429 errors
+        if (response.status === 504 || response.status === 502 || 
+            response.status === 503 || response.status === 429) {
           const delay = Math.pow(2, i) * 1000; // 1s, 2s, 4s
           logger.debug(`API returned ${response.status}, retrying in ${delay}ms`);
           await new Promise(resolve => setTimeout(resolve, delay));
@@ -103,12 +98,31 @@ class ExplorerApiService {
         
         throw new Error(`API error: ${response.status}`);
       } catch (error) {
+        if (timeoutId) clearTimeout(timeoutId);
         if (i === retries - 1) throw error;
         const delay = Math.pow(2, i) * 1000;
         logger.debug(`Request failed, retrying in ${delay}ms`, { error: error.message });
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
+  }
+
+  /**
+   * Process items in batches with concurrency limit
+   * This processes batches sequentially but items within each batch are parallel
+   * @param {Array} items - Items to process
+   * @param {Function} processor - Async function to process each item
+   * @param {number} concurrency - Maximum concurrent operations per batch
+   * @returns {Promise<Array>} - Results from all items
+   */
+  async processBatches(items, processor, concurrency = this.getMaxConcurrent()) {
+    const results = [];
+    for (let i = 0; i < items.length; i += concurrency) {
+      const batch = items.slice(i, i + concurrency);
+      const batchResults = await Promise.all(batch.map(item => processor(item)));
+      results.push(...batchResults);
+    }
+    return results;
   }
 
   /**
@@ -244,13 +258,20 @@ class ExplorerApiService {
         return { success: true, transactions: [] };
       }
 
-      // Step 2: Get unique parent transaction hashes
-      const txHashes = [...new Set(walletTxns.transactions.map(tx => tx.transactionHash))];
+      // Step 2: Get unique parent transaction hashes (filter out null/undefined)
+      const txHashes = [...new Set(
+        walletTxns.transactions
+          .map(tx => tx.transactionHash)
+          .filter(hash => hash != null)
+      )];
       logger.debug('Found unique tx hashes', { count: txHashes.length, wallet: normalizedAddress.substring(0, 10) + '...' });
 
-      // Step 3: Fetch all transaction traces in PARALLEL
-      const tracePromises = txHashes.map(hash => this.getTransactionTrace(hash));
-      const traces = await Promise.all(tracePromises);
+      // Step 3: Fetch all transaction traces in batched parallel (respecting concurrency limit)
+      const traces = await this.processBatches(
+        txHashes,
+        hash => this.getTransactionTrace(hash),
+        this.getMaxConcurrent()
+      );
 
       // Step 4: Flatten all internal txns from all traces
       const allInternalTxns = traces
@@ -317,8 +338,12 @@ class ExplorerApiService {
   countTransactionsForContract(transactions, contractAddress) {
     const matchingTxns = this.getMatchingTransactions(transactions, contractAddress);
     
-    // Count unique transaction hashes (not individual internal calls)
-    const uniqueTxHashes = [...new Set(matchingTxns.map(tx => tx.transactionHash))];
+    // Count unique transaction hashes (not individual internal calls), filter out null/undefined
+    const uniqueTxHashes = [...new Set(
+      matchingTxns
+        .map(tx => tx.transactionHash)
+        .filter(hash => hash != null)
+    )];
     
     return uniqueTxHashes.length;
   }
