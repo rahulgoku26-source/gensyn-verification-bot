@@ -13,14 +13,18 @@ class AutoVerifyWorker {
 
   start() {
     const intervalMs = config.autoVerify.intervalMinutes * 60 * 1000;
+    const startupDelayMs = 30000; // 30 second delay before first run to prevent API hammering on startup
     
     logger.info(`Auto-verify worker started (interval: ${config.autoVerify.intervalMinutes} min)`);
     logger.info(`Using Block Explorer API for verification`);
     logger.info(`Batch size: ${config.performance.batchSize}, Min transactions: ${config.explorer.minTransactions}`);
+    logger.info(`First auto-verify run will start in ${startupDelayMs / 1000} seconds`);
     
-    // Run immediately, then on interval
-    this.run();
-    setInterval(() => this.run(), intervalMs);
+    // Delay first run by 30 seconds to prevent immediate API hammering on bot startup
+    setTimeout(() => {
+      this.run();
+      setInterval(() => this.run(), intervalMs);
+    }, startupDelayMs);
   }
 
   async run() {
