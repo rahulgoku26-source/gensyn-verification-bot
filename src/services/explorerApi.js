@@ -390,6 +390,9 @@ class ExplorerApiService {
           ? 'No transactions found'
           : `Only ${txnCount} txns found (min ${minTxns} required)`;
         
+        // Log failed verification to terminal
+        console.log(`[${new Date().toISOString()}] ❌ FAILED  | Wallet: ${normalizedWallet.substring(0, 10)}...${normalizedWallet.slice(-4)} | Contract: ${contract.name} | Txns: ${txnCount} | Reason: ${reason}`);
+        
         return {
           success: false,
           contractId: contract.id,
@@ -405,6 +408,9 @@ class ExplorerApiService {
       const latestTxn = contractTxns[0];
       const txHash = latestTxn?.hash || latestTxn?.transactionHash || 'N/A';
       const blockNumber = latestTxn?.blockNumber || 'N/A';
+
+      // Log successful verification to terminal
+      console.log(`[${new Date().toISOString()}] ✅ SUCCESS | Wallet: ${normalizedWallet.substring(0, 10)}...${normalizedWallet.slice(-4)} | Contract: ${contract.name} | Txns: ${txnCount} | Verified: ✅`);
 
       return {
         success: true,
@@ -424,6 +430,9 @@ class ExplorerApiService {
         contract: contract.name,
         error: error.message
       });
+
+      // Log error to terminal
+      console.log(`[${new Date().toISOString()}] ❌ FAILED  | Wallet: ${normalizedWallet.substring(0, 10)}...${normalizedWallet.slice(-4)} | Contract: ${contract.name} | Txns: 0 | Reason: ${error.message}`);
 
       return {
         success: false,
@@ -475,6 +484,9 @@ class ExplorerApiService {
               ? 'No transactions found'
               : `Only ${txnCount} txns found (min ${minTxns} required)`;
             
+            // Log failed verification to terminal
+            console.log(`[${new Date().toISOString()}] ❌ FAILED  | Wallet: ${normalizedWallet.substring(0, 10)}...${normalizedWallet.slice(-4)} | Contract: ${contract.name} | Txns: ${txnCount} | Reason: ${reason}`);
+            
             return {
               success: false,
               contractId: contract.id,
@@ -490,6 +502,9 @@ class ExplorerApiService {
           const latestTxn = contractTxns[0];
           const txHash = latestTxn?.hash || latestTxn?.transactionHash || 'N/A';
           const blockNumber = latestTxn?.blockNumber || 'N/A';
+
+          // Log successful verification to terminal
+          console.log(`[${new Date().toISOString()}] ✅ SUCCESS | Wallet: ${normalizedWallet.substring(0, 10)}...${normalizedWallet.slice(-4)} | Contract: ${contract.name} | Txns: ${txnCount} | Verified: ✅`);
 
           return {
             success: true,

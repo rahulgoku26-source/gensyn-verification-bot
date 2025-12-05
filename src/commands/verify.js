@@ -98,6 +98,8 @@ module.exports = {
           try {
             if (role && !member.roles.cache.has(result.roleId)) {
               await member.roles.add(role);
+              // Log successful verification with role assignment to terminal
+              console.log(`[${new Date().toISOString()}] ✅ SUCCESS | Discord: ${interaction.user.username} (${discordId}) | Wallet: ${wallet.substring(0, 10)}...${wallet.slice(-4)} | Contract: ${result.contractName} | Txns: ${result.txnCount} | Role Assigned: ✅`);
               newlyVerified.push({
                 name: result.contractName,
                 role: roleName,
@@ -106,6 +108,8 @@ module.exports = {
                 isNew: true
               });
             } else if (member.roles.cache.has(result.roleId)) {
+              // Log successful verification with existing role to terminal
+              console.log(`[${new Date().toISOString()}] ✅ SUCCESS | Discord: ${interaction.user.username} (${discordId}) | Wallet: ${wallet.substring(0, 10)}...${wallet.slice(-4)} | Contract: ${result.contractName} | Txns: ${result.txnCount} | Role Assigned: Already had role`);
               newlyVerified.push({
                 name: result.contractName,
                 role: roleName,
@@ -116,6 +120,8 @@ module.exports = {
             }
           } catch (roleError) {
             logger.error('Failed to assign role', { error: roleError.message });
+            // Log role assignment failure to terminal
+            console.log(`[${new Date().toISOString()}] ⚠️ WARNING | Discord: ${interaction.user.username} (${discordId}) | Wallet: ${wallet.substring(0, 10)}...${wallet.slice(-4)} | Contract: ${result.contractName} | Txns: ${result.txnCount} | Role Assigned: ❌ (Failed to assign role)`);
             newlyVerified.push({
               name: result.contractName,
               role: roleName,
@@ -126,6 +132,8 @@ module.exports = {
             });
           }
         } else {
+          // Log failed verification to terminal
+          console.log(`[${new Date().toISOString()}] ❌ FAILED  | Discord: ${interaction.user.username} (${discordId}) | Wallet: ${wallet.substring(0, 10)}...${wallet.slice(-4)} | Contract: ${result.contractName} | Txns: ${result.txnCount || 0} | Reason: ${result.error}`);
           failedVerifications.push({
             name: result.contractName,
             error: result.error,
