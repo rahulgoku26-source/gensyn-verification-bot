@@ -1,6 +1,9 @@
 const config = require('../config/config');
 const logger = require('../utils/logger');
 
+// Retriable HTTP status codes
+const RETRIABLE_STATUS_CODES = [502, 503, 504, 429];
+
 class ExplorerApiService {
   constructor() {
     this.cache = new Map();
@@ -9,6 +12,7 @@ class ExplorerApiService {
     this.requestCount = 0;
     this.requestWindow = 60000; // 1 minute window
     this.windowStart = Date.now();
+    this.requestTimeout = 30000; // 30 seconds timeout
   }
 
   /**
@@ -75,7 +79,7 @@ class ExplorerApiService {
         await this.waitForRateLimit();
         
         const controller = new AbortController();
-        timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+        timeoutId = setTimeout(() => controller.abort(), this.requestTimeout);
         
         const response = await fetch(url, { 
           signal: controller.signal
@@ -87,9 +91,8 @@ class ExplorerApiService {
           return await response.json();
         }
         
-        // Retry on 502, 503, 504, or 429 errors
-        if (response.status === 504 || response.status === 502 || 
-            response.status === 503 || response.status === 429) {
+        // Retry on retriable status codes (502, 503, 504, 429)
+        if (RETRIABLE_STATUS_CODES.includes(response.status)) {
           const delay = Math.pow(2, i) * 1000; // 1s, 2s, 4s
           logger.debug(`API returned ${response.status}, retrying in ${delay}ms`);
           await new Promise(resolve => setTimeout(resolve, delay));
@@ -259,10 +262,11 @@ class ExplorerApiService {
       }
 
       // Step 2: Get unique parent transaction hashes (filter out null/undefined)
+      // Step 2: Get unique parent transaction hashes (filter out null, undefined, and empty strings)
       const txHashes = [...new Set(
         walletTxns.transactions
           .map(tx => tx.transactionHash)
-          .filter(hash => hash != null)
+          .filter(hash => hash !== null && hash !== undefined && hash !== '')
       )];
       logger.debug('Found unique tx hashes', { count: txHashes.length, wallet: normalizedAddress.substring(0, 10) + '...' });
 
@@ -338,11 +342,11 @@ class ExplorerApiService {
   countTransactionsForContract(transactions, contractAddress) {
     const matchingTxns = this.getMatchingTransactions(transactions, contractAddress);
     
-    // Count unique transaction hashes (not individual internal calls), filter out null/undefined
+    // Count unique transaction hashes (not individual internal calls), filter out null, undefined, and empty strings
     const uniqueTxHashes = [...new Set(
       matchingTxns
         .map(tx => tx.transactionHash)
-        .filter(hash => hash != null)
+        .filter(hash => hash !== null && hash !== undefined && hash !== '')
     )];
     
     return uniqueTxHashes.length;
