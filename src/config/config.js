@@ -6,6 +6,7 @@ const config = {
     token: process.env.DISCORD_TOKEN,
     guildId: process.env.GUILD_ID,
     verificationChannelId: process.env.VERIFICATION_CHANNEL_ID,
+    logChannelId: process.env.LOG_CHANNEL_ID,
   },
 
   // Gensyn Application Role IDs
