@@ -402,6 +402,54 @@ class Database {
     }
   }
 
+  // Save Gensyn verification results for a user
+  saveGensynVerification(walletAddress, verificationData) {
+    const normalized = walletAddress.toLowerCase();
+    if (!this.data[normalized]) return false;
+
+    if (!this.data[normalized].gensynVerification) {
+      this.data[normalized].gensynVerification = {};
+    }
+
+    const timestamp = new Date().toISOString();
+
+    this.data[normalized].gensynVerification = {
+      codeAssist: verificationData.codeAssist,
+      blockAssist: verificationData.blockAssist,
+      judge: verificationData.judge,
+      rlSwarm: verificationData.rlSwarm,
+      lastVerified: timestamp
+    };
+
+    this.data[normalized].lastCheckedAt = timestamp;
+    this.save();
+    
+    logger.info('Gensyn verification saved', { 
+      wallet: normalized.substring(0, 10) + '...', 
+      eligible: verificationData.summary?.totalEligible || 0 
+    });
+    
+    return true;
+  }
+
+  // Get Gensyn verification status for a user
+  getGensynVerification(walletAddress) {
+    const normalized = walletAddress.toLowerCase();
+    const user = this.data[normalized];
+    if (!user) return null;
+    return user.gensynVerification || null;
+  }
+
+  // Check if user is verified for a specific Gensyn application
+  isGensynVerified(walletAddress, applicationName) {
+    const normalized = walletAddress.toLowerCase();
+    const user = this.data[normalized];
+    if (!user || !user.gensynVerification) return false;
+    
+    const verification = user.gensynVerification[applicationName];
+    return verification?.eligible === true;
+  }
+
   // Get all users
   getAllUsers() {
     return this.data;
