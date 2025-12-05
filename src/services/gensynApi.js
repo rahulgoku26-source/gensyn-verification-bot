@@ -20,11 +20,28 @@ class GensynApiService {
     );
   }
 
+  /**
+   * Verify CodeAssist participation
+   */
   async verifyCodeAssist(address) {
     try {
-      const url = `${this.dashboardBaseUrl}/applications/codeassist/userinfo/${address}`;
-      const response = await axios.get(url, { timeout: 10000 });
-      const participation = response.data?.participation || 0;
+      const url = `${this. dashboardBaseUrl}/applications/codeassist/userinfo/${address}`;
+      const response = await axios.get(url, { 
+        timeout: 10000,
+        validateStatus: (status) => status < 500 // Accept 4xx as valid responses
+      });
+      
+      // Handle 404 or empty response as no participation
+      if (response.status === 404 || ! response.data) {
+        return {
+          eligible: false,
+          participation: 0,
+          message: `CodeAssist: ❌ No participation found`
+        };
+      }
+      
+      const participation = response.data?. participation || 0;
+      
       return {
         eligible: participation > 0,
         participation: participation,
@@ -33,16 +50,37 @@ class GensynApiService {
           : `CodeAssist: ❌ No participation found`
       };
     } catch (error) {
+      // Network error or timeout - treat as no participation
       console.error('CodeAssist verification error:', error.message);
-      return { eligible: false, participation: 0, message: `CodeAssist: ❌ Error verifying` };
+      return {
+        eligible: false,
+        participation: 0,
+        message: `CodeAssist: ❌ No participation found`
+      };
     }
   }
 
+  /**
+   * Verify BlockAssist participation
+   */
   async verifyBlockAssist(address) {
     try {
-      const url = `${this.dashboardBaseUrl}/users/${address}/blockassist/stats`;
-      const response = await axios.get(url, { timeout: 10000 });
+      const url = `${this. dashboardBaseUrl}/users/${address}/blockassist/stats`;
+      const response = await axios.get(url, { 
+        timeout: 10000,
+        validateStatus: (status) => status < 500
+      });
+      
+      if (response.status === 404 || !response.data) {
+        return {
+          eligible: false,
+          participation: 0,
+          message: `BlockAssist: ❌ No participation found`
+        };
+      }
+      
       const participation = response.data?.participation || 0;
+      
       return {
         eligible: participation > 0,
         participation: participation,
@@ -52,18 +90,42 @@ class GensynApiService {
       };
     } catch (error) {
       console.error('BlockAssist verification error:', error.message);
-      return { eligible: false, participation: 0, message: `BlockAssist: ❌ Error verifying` };
+      return {
+        eligible: false,
+        participation: 0,
+        message: `BlockAssist: ❌ No participation found`
+      };
     }
   }
 
+  /**
+   * Verify Judge (Verdict) participation
+   */
   async verifyJudge(address) {
     try {
-      const url = `${this.dashboardBaseUrl}/applications/verdict/userinfo/${address}`;
-      const response = await axios.get(url, { timeout: 10000 });
-      const entries = response.data?.entries || [];
+      const url = `${this. dashboardBaseUrl}/applications/verdict/userinfo/${address}`;
+      const response = await axios. get(url, { 
+        timeout: 10000,
+        validateStatus: (status) => status < 500
+      });
+      
+      if (response.status === 404 || ! response.data) {
+        return {
+          eligible: false,
+          betsPlaced: 0,
+          totalPoints: 0,
+          entriesCount: 0,
+          message: `Judge: ❌ No bets/entries found`
+        };
+      }
+      
+      const entries = response.data?. entries || [];
       const betsPlaced = response.data?.betsPlaced || 0;
       const totalPoints = response.data?.totalPoints || 0;
-      const hasEntries = entries.length > 0 || betsPlaced > 0;
+      
+      // User is eligible if they have any entries (even if they lost and have 0 points)
+      const hasEntries = entries. length > 0 || betsPlaced > 0;
+      
       return {
         eligible: hasEntries,
         betsPlaced: betsPlaced,
@@ -74,18 +136,33 @@ class GensynApiService {
           : `Judge: ❌ No bets/entries found`
       };
     } catch (error) {
-      console.error('Judge verification error:', error.message);
-      return { eligible: false, betsPlaced: 0, totalPoints: 0, message: `Judge: ❌ Error verifying` };
+      console.error('Judge verification error:', error. message);
+      return {
+        eligible: false,
+        betsPlaced: 0,
+        totalPoints: 0,
+        entriesCount: 0,
+        message: `Judge: ❌ No bets/entries found`
+      };
     }
   }
 
+  /**
+   * Verify RLSwarm (The Swarm) participation
+   */
   async verifyRLSwarm(address) {
     try {
       const peerIdsResult = await this.swarmContract.getPeerId([address]);
       const peerIds = peerIdsResult[0] || [];
       
       if (peerIds.length === 0) {
-        return { eligible: false, peerIds: [], peerCount: 0, totalWins: 0, message: `RLSwarm: ❌ No peer IDs registered` };
+        return {
+          eligible: false,
+          peerIds: [],
+          peerCount: 0,
+          totalWins: 0,
+          message: `RLSwarm: ❌ No peer IDs registered`
+        };
       }
       
       let totalWins = 0;
@@ -94,37 +171,39 @@ class GensynApiService {
           const wins = await this.swarmContract.getTotalWins(peerId);
           totalWins += Number(wins);
         } catch (err) {
-          console.error(`Error getting wins for peer ${peerId}:`, err.message);
-          // Continue with other peers even if one fails
+          console.error(`Error getting wins for peer ${peerId}:`, err. message);
         }
       }
       
       const eligible = totalWins > 0;
+      
       return {
         eligible: eligible,
         peerIds: peerIds,
         peerCount: peerIds.length,
         totalWins: totalWins,
         message: eligible 
-          ? `RLSwarm: ✅ Verified (Peers: ${peerIds.length}, Total Wins: ${totalWins})`
+          ?  `RLSwarm: ✅ Verified (Peers: ${peerIds.length}, Total Wins: ${totalWins})`
           : `RLSwarm: ❌ No wins found (Peers: ${peerIds.length}, Wins: 0)`
       };
     } catch (error) {
       console.error('RLSwarm verification error:', error.message);
-      // More descriptive error message based on error type
-      let errorMessage = 'Error connecting to smart contract';
-      if (error.message.includes('network')) {
-        errorMessage = 'Network error connecting to Gensyn RPC';
-      } else if (error.message.includes('timeout')) {
-        errorMessage = 'Contract call timed out';
-      }
-      return { eligible: false, peerIds: [], peerCount: 0, totalWins: 0, message: `RLSwarm: ❌ ${errorMessage}` };
+      return {
+        eligible: false,
+        peerIds: [],
+        peerCount: 0,
+        totalWins: 0,
+        message: `RLSwarm: ❌ No peers registered`
+      };
     }
   }
 
+  /**
+   * Verify all applications for an address
+   */
   async verifyAll(address) {
     if (!ethers.isAddress(address)) {
-      throw new Error('Invalid Gensyn Dashboard address format');
+      throw new Error('Invalid Ethereum address format');
     }
     
     const normalizedAddress = ethers.getAddress(address);
@@ -132,7 +211,7 @@ class GensynApiService {
     const [codeAssist, blockAssist, judge, rlSwarm] = await Promise.all([
       this.verifyCodeAssist(normalizedAddress),
       this.verifyBlockAssist(normalizedAddress),
-      this.verifyJudge(normalizedAddress),
+      this. verifyJudge(normalizedAddress),
       this.verifyRLSwarm(normalizedAddress)
     ]);
     
@@ -143,7 +222,7 @@ class GensynApiService {
       judge,
       rlSwarm,
       summary: {
-        totalEligible: [codeAssist, blockAssist, judge, rlSwarm].filter(r => r.eligible).length,
+        totalEligible: [codeAssist, blockAssist, judge, rlSwarm].filter(r => r. eligible).length,
         eligible: {
           codeAssist: codeAssist.eligible,
           blockAssist: blockAssist.eligible,
