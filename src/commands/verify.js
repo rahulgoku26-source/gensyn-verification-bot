@@ -261,12 +261,15 @@ module.exports = {
         try {
           const logChannel = interaction.guild.channels.cache.get(config.discord.logChannelId);
           if (logChannel) {
+            const addressDisplay = wallet 
+              ? `\`${wallet.substring(0, 10)}...${wallet.slice(-4)}\`` 
+              : 'Unknown';
             const errorEmbed = new EmbedBuilder()
               .setTitle('❌ Verification Failed')
               .setColor(0xff0000)
               .addFields(
                 { name: '👤 User', value: `${interaction.user.tag} (${discordId})`, inline: true },
-                { name: '🔗 Address', value: `\`${wallet.substring(0, 10)}...${wallet.slice(-4)}\``, inline: true },
+                { name: '🔗 Address', value: addressDisplay, inline: true },
                 { name: '❌ Error', value: error.message || 'Unknown error', inline: false }
               )
               .setTimestamp();
