@@ -107,10 +107,10 @@ class Database {
   trimLogFile(filePath, maxEntries = config.logging.maxLogEntries) {
     try {
       if (!fs.existsSync(filePath)) return;
-      
+
       const content = fs.readFileSync(filePath, 'utf8');
       const lines = content.split('\n').filter(line => line.trim());
-      
+
       if (lines.length > maxEntries) {
         const trimmed = lines.slice(-maxEntries).join('\n');
         fs.writeFileSync(filePath, trimmed + '\n');
@@ -122,7 +122,7 @@ class Database {
 
   /**
    * Record failed verification with simple one-line format
-   * Format: [TIMESTAMP] FAILED | Discord: username (id) | Wallet: 0x... | Contract: Name | Reason: ...
+   * Format: [TIMESTAMP] FAILED | Discord: username (id) | Wallet: 0x...  | Contract: Name | Reason: ... 
    */
   recordFailedVerification(data) {
     const {
@@ -137,16 +137,16 @@ class Database {
 
     const timestamp = this.formatTimestamp();
     const wallet = walletAddress ? `${walletAddress.substring(0, 6)}...${walletAddress.slice(-3)}` : 'N/A';
-    
+
     const logEntry = `[${timestamp}] FAILED | Discord: ${discordUsername || 'Unknown'} (${discordId}) | Wallet: ${wallet} | Contract: ${contractName || contractId} | Reason: ${reason}`;
-    
+
     this.appendToLog(this.failedLogPath, logEntry);
     this.trimLogFile(this.failedLogPath);
   }
 
   /**
    * Record successful verification with simple one-line format
-   * Format: [TIMESTAMP] SUCCESS | Discord: username (id) | Wallet: 0x... | Contract: Name | Txns: N | Role Assigned: ✅
+   * Format: [TIMESTAMP] SUCCESS | Discord: username (id) | Wallet: 0x...  | Contract: Name | Txns: N | Role Assigned: ✅
    */
   recordSuccessfulVerification(data) {
     const {
@@ -161,9 +161,9 @@ class Database {
 
     const timestamp = this.formatTimestamp();
     const wallet = walletAddress ? `${walletAddress.substring(0, 6)}...${walletAddress.slice(-3)}` : 'N/A';
-    
+
     const logEntry = `[${timestamp}] SUCCESS | Discord: ${discordUsername || 'Unknown'} (${discordId}) | Wallet: ${wallet} | Contract: ${contractName || contractId} | Txns: ${txnCount} | Role Assigned: ${roleAssigned ? '✅' : '❌'}`;
-    
+
     this.appendToLog(this.successLogPath, logEntry);
     this.trimLogFile(this.successLogPath);
   }
@@ -194,10 +194,10 @@ class Database {
       if (!fs.existsSync(backupsDir)) {
         fs.mkdirSync(backupsDir, { recursive: true });
       }
-      
+
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const backupPath = path.join(backupsDir, `users-${timestamp}.json`);
-      
+
       fs.copyFileSync(this.dbPath, backupPath);
       logger.info('Database backup created', { path: backupPath });
 
@@ -232,7 +232,7 @@ class Database {
   // Link wallet to Discord user with full user info
   linkWallet(discordId, walletAddress, discordUsername = null, discordTag = null) {
     const normalized = walletAddress.toLowerCase();
-    
+
     // Check if wallet already linked to another user
     for (const [wallet, data] of Object.entries(this.data)) {
       if (wallet === normalized && data.discordId !== discordId) {
@@ -294,6 +294,31 @@ class Database {
     const wallet = this.getWalletByDiscordId(discordId);
     if (!wallet) return null;
     return { wallet, ...this.data[wallet] };
+  }
+
+  // ========== NEW METHOD: Remove user by wallet address ==========
+  removeUser(walletAddress) {
+    const normalized = walletAddress.toLowerCase();
+    if (this.data[normalized]) {
+      const userData = this.data[normalized];
+      delete this.data[normalized];
+      this.save();
+      logger.info('User removed', {
+        wallet: normalized.substring(0, 10) + '... ',
+        discordId: userData.discordId
+      });
+      return true;
+    }
+    return false;
+  }
+
+  // ========== NEW METHOD: Remove user by Discord ID ==========
+  removeUserByDiscordId(discordId) {
+    const wallet = this.getWalletByDiscordId(discordId);
+    if (wallet) {
+      return this.removeUser(wallet);
+    }
+    return false;
   }
 
   // Record verification for a contract with role tracking and txn count
@@ -372,7 +397,7 @@ class Database {
   addUserRole(walletAddress, roleId) {
     const normalized = walletAddress.toLowerCase();
     if (!this.data[normalized]) return false;
-    
+
     if (!this.data[normalized].roles) {
       this.data[normalized].roles = [];
     }
@@ -423,12 +448,12 @@ class Database {
 
     this.data[normalized].lastCheckedAt = timestamp;
     this.save();
-    
-    logger.info('Gensyn verification saved', { 
-      wallet: normalized.substring(0, 10) + '...', 
-      eligible: verificationData.summary?.totalEligible || 0 
+
+    logger.info('Gensyn verification saved', {
+      wallet: normalized.substring(0, 10) + '... ',
+      eligible: verificationData.summary?.totalEligible || 0
     });
-    
+
     return true;
   }
 
@@ -445,7 +470,7 @@ class Database {
     const normalized = walletAddress.toLowerCase();
     const user = this.data[normalized];
     if (!user || !user.gensynVerification) return false;
-    
+
     const verification = user.gensynVerification[applicationName];
     return verification?.eligible === true;
   }
@@ -471,7 +496,7 @@ class Database {
   getStats() {
     const users = Object.values(this.data);
     const totalUsers = users.length;
-    const verifiedUsers = users.filter(u => 
+    const verifiedUsers = users.filter(u =>
       u.verifications && Object.values(u.verifications).some(v => v.verified)
     ).length;
 
@@ -479,7 +504,7 @@ class Database {
     for (const contract of config.contracts) {
       contractStats[contract.id] = {
         name: contract.name,
-        verified: users.filter(u => 
+        verified: users.filter(u =>
           u.verifications?.[contract.id]?.verified
         ).length
       };
@@ -512,17 +537,17 @@ class Database {
   // Export all data (flat format for easy TXT export)
   exportAllData() {
     const flatUsers = [];
-    
+
     for (const [wallet, userData] of Object.entries(this.data)) {
       const contractStatus = {};
       for (const contract of config.contracts) {
         const verification = userData.verifications?.[contract.id];
         const txnCount = verification?.txnCount || 0;
-        contractStatus[contract.name] = verification?.verified 
-          ? `✅ (${txnCount} txns)` 
+        contractStatus[contract.name] = verification?.verified
+          ? `✅ (${txnCount} txns)`
           : `❌ (${txnCount} txns)`;
       }
-      
+
       flatUsers.push({
         wallet,
         discordId: userData.discordId,
@@ -543,34 +568,35 @@ class Database {
 
   /**
    * Export users in flat TXT format
-   * Format: WALLET | DISCORD_ID | DISCORD_NAME | CONTRACT1 | CONTRACT2 | ... | LINKED_AT
+   * Format: WALLET | DISCORD_ID | DISCORD_NAME | CONTRACT1 | CONTRACT2 | ...  | LINKED_AT
    */
   exportFlatFormat() {
     const header = ['WALLET', 'DISCORD_ID', 'DISCORD_NAME'];
     config.contracts.forEach(c => header.push(c.name.toUpperCase()));
     header.push('LINKED_AT');
-    
+
     const lines = [header.join(' | ')];
-    
+
     for (const [wallet, userData] of Object.entries(this.data)) {
       const row = [
         wallet,
         userData.discordId,
         userData.discordUsername || 'Unknown'
       ];
-      
+
       for (const contract of config.contracts) {
         const verification = userData.verifications?.[contract.id];
         const txnCount = verification?.txnCount || 0;
         row.push(verification?.verified ? `✅ (${txnCount} txns)` : `❌ (${txnCount} txns)`);
       }
-      
+
       row.push(userData.linkedAt?.split('T')[0] || 'N/A');
       lines.push(row.join(' | '));
     }
-    
+
     return lines.join('\n');
   }
 }
 
 module.exports = new Database();
+
