@@ -261,7 +261,6 @@ class ExplorerApiService {
         return { success: true, transactions: [] };
       }
 
-      // Step 2: Get unique parent transaction hashes (filter out null/undefined)
       // Step 2: Get unique parent transaction hashes (filter out null, undefined, and empty strings)
       const txHashes = [...new Set(
         walletTxns.transactions
@@ -312,8 +311,8 @@ class ExplorerApiService {
   }
 
   /**
-   * Get matching transactions for a specific contract address
-   * Checks to, from, and contractAddress fields
+   * Gets matching transactions for a specific contract address.
+   * Checks to, from, and contractAddress fields.
    * @param {Array} transactions - List of internal transactions
    * @param {string} contractAddress - The contract address to filter by
    * @returns {Array} - Matching transactions
