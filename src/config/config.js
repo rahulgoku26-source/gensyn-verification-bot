@@ -79,7 +79,6 @@ const config = {
     cacheTTL: parseInt(process.env.CACHE_TTL) || 3600, // 1 hour in seconds (changed from 5 minutes)
     maxConcurrent: parseInt(process.env.MAX_CONCURRENT) || 10,
     requestsPerSecond: parseInt(process.env.REQUESTS_PER_SECOND) || 10,
-    backupInterval: parseInt(process.env.BACKUP_INTERVAL) || 3600, // 1 hour in seconds
   },
 };
 

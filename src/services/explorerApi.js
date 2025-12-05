@@ -7,11 +7,7 @@ const RETRIABLE_STATUS_CODES = [502, 503, 504, 429];
 class ExplorerApiService {
   constructor() {
     this.cache = new Map();
-    this.rateLimitQueue = [];
     this.lastRequestTime = 0;
-    this.requestCount = 0;
-    this.requestWindow = 60000; // 1 minute window
-    this.windowStart = Date.now();
     this.requestTimeout = 30000; // 30 seconds timeout
   }
 
