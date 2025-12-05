@@ -28,10 +28,9 @@ class GensynApiService {
       const url = `${this. dashboardBaseUrl}/applications/codeassist/userinfo/${address}`;
       const response = await axios.get(url, { 
         timeout: 10000,
-        validateStatus: (status) => status < 500 // Accept 4xx as valid responses
+        validateStatus: (status) => status < 500
       });
       
-      // Handle 404 or empty response as no participation
       if (response.status === 404 || ! response.data) {
         return {
           eligible: false,
@@ -40,7 +39,7 @@ class GensynApiService {
         };
       }
       
-      const participation = response.data?. participation || 0;
+      const participation = response.data?.participation || 0;
       
       return {
         eligible: participation > 0,
@@ -50,8 +49,7 @@ class GensynApiService {
           : `CodeAssist: ❌ No participation found`
       };
     } catch (error) {
-      // Network error or timeout - treat as no participation
-      console.error('CodeAssist verification error:', error.message);
+      console.log('CodeAssist check for', address, '- No data found');
       return {
         eligible: false,
         participation: 0,
@@ -65,7 +63,7 @@ class GensynApiService {
    */
   async verifyBlockAssist(address) {
     try {
-      const url = `${this. dashboardBaseUrl}/users/${address}/blockassist/stats`;
+      const url = `${this.dashboardBaseUrl}/users/${address}/blockassist/stats`;
       const response = await axios.get(url, { 
         timeout: 10000,
         validateStatus: (status) => status < 500
@@ -89,7 +87,7 @@ class GensynApiService {
           : `BlockAssist: ❌ No participation found`
       };
     } catch (error) {
-      console.error('BlockAssist verification error:', error.message);
+      console.log('BlockAssist check for', address, '- No data found');
       return {
         eligible: false,
         participation: 0,
@@ -123,8 +121,7 @@ class GensynApiService {
       const betsPlaced = response.data?.betsPlaced || 0;
       const totalPoints = response.data?.totalPoints || 0;
       
-      // User is eligible if they have any entries (even if they lost and have 0 points)
-      const hasEntries = entries. length > 0 || betsPlaced > 0;
+      const hasEntries = entries.length > 0 || betsPlaced > 0;
       
       return {
         eligible: hasEntries,
@@ -136,7 +133,7 @@ class GensynApiService {
           : `Judge: ❌ No bets/entries found`
       };
     } catch (error) {
-      console.error('Judge verification error:', error. message);
+      console.log('Judge check for', address, '- No data found');
       return {
         eligible: false,
         betsPlaced: 0,
@@ -171,7 +168,7 @@ class GensynApiService {
           const wins = await this.swarmContract.getTotalWins(peerId);
           totalWins += Number(wins);
         } catch (err) {
-          console.error(`Error getting wins for peer ${peerId}:`, err. message);
+          console.log(`Could not get wins for peer ${peerId. substring(0, 20)}...`);
         }
       }
       
@@ -187,7 +184,7 @@ class GensynApiService {
           : `RLSwarm: ❌ No wins found (Peers: ${peerIds.length}, Wins: 0)`
       };
     } catch (error) {
-      console.error('RLSwarm verification error:', error.message);
+      console.log('RLSwarm check for', address, '- No peers found');
       return {
         eligible: false,
         peerIds: [],
@@ -211,7 +208,7 @@ class GensynApiService {
     const [codeAssist, blockAssist, judge, rlSwarm] = await Promise.all([
       this.verifyCodeAssist(normalizedAddress),
       this.verifyBlockAssist(normalizedAddress),
-      this. verifyJudge(normalizedAddress),
+      this.verifyJudge(normalizedAddress),
       this.verifyRLSwarm(normalizedAddress)
     ]);
     
@@ -222,7 +219,7 @@ class GensynApiService {
       judge,
       rlSwarm,
       summary: {
-        totalEligible: [codeAssist, blockAssist, judge, rlSwarm].filter(r => r. eligible).length,
+        totalEligible: [codeAssist, blockAssist, judge, rlSwarm].filter(r => r.eligible).length,
         eligible: {
           codeAssist: codeAssist.eligible,
           blockAssist: blockAssist.eligible,
