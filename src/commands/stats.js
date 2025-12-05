@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const database = require('../services/database');
-const blockchain = require('../services/blockchain');
+const explorerApi = require('../services/explorerApi');
+const performance = require('../utils/performance');
 const config = require('../config/config');
 
 module.exports = {
@@ -13,7 +14,11 @@ module.exports = {
     await interaction.deferReply({ ephemeral: true });
 
     const stats = database.getStats();
-    const connectionResults = await blockchain.testAllConnections();
+    const perfStats = performance.getStats();
+    const memoryUsage = performance.getMemoryUsage();
+    
+    // Test Explorer API connection
+    const connectionTest = await explorerApi.testConnection();
 
     const embed = new EmbedBuilder()
       .setTitle('📊 Bot Statistics')
@@ -25,21 +30,20 @@ module.exports = {
       )
       .setTimestamp();
 
-    // Connection status per contract
-    let connectionStatus = '';
-    for (const result of connectionResults) {
-      if (result.success) {
-        connectionStatus += `✅ **${result.contractName}**\n`;
-        connectionStatus += `   Block: ${result.blockNumber}\n`;
-      } else {
-        connectionStatus += `❌ **${result.contractName}**\n`;
-        connectionStatus += `   Error: ${result.error}\n`;
-      }
+    // Explorer API status
+    let apiStatus = '';
+    if (connectionTest.success) {
+      apiStatus = `✅ **Block Explorer API**: Connected\n`;
+      apiStatus += `   URL: ${config.explorer.apiUrl.substring(0, 40)}...\n`;
+      apiStatus += `   Min Txns: ${config.explorer.minTransactions}`;
+    } else {
+      apiStatus = `❌ **Block Explorer API**: Error\n`;
+      apiStatus += `   Error: ${connectionTest.error}`;
     }
     
     embed.addFields({ 
-      name: '🔗 Blockchain Connection Status', 
-      value: connectionStatus || 'No contracts configured', 
+      name: '🔗 API Connection Status', 
+      value: apiStatus, 
       inline: false 
     });
 
@@ -85,6 +89,20 @@ module.exports = {
       { name: '❌ Failed Verifications', value: stats.failedCount.toString(), inline: true }
     );
 
+    // Performance stats
+    let perfInfo = '';
+    perfInfo += `**Uptime:** ${perfStats.uptimeFormatted}\n`;
+    perfInfo += `**Users Processed:** ${perfStats.usersProcessed}\n`;
+    perfInfo += `**Speed:** ${perfStats.usersPerMinute} users/min\n`;
+    perfInfo += `**Cache Hit Rate:** ${perfStats.cacheHitRate}%\n`;
+    perfInfo += `**Success Rate:** ${perfStats.successRate}%`;
+    
+    embed.addFields({
+      name: '⚡ Performance',
+      value: perfInfo,
+      inline: false
+    });
+
     // Auto-verify settings
     const autoVerifyStatus = config.autoVerify.enabled 
       ? `✅ Enabled (every ${config.autoVerify.intervalMinutes} min)` 
@@ -92,14 +110,28 @@ module.exports = {
     
     embed.addFields({
       name: '⚙️ Auto-Verify',
-      value: autoVerifyStatus,
-      inline: false
+      value: `${autoVerifyStatus}\nBatch Size: ${config.performance.batchSize}`,
+      inline: true
     });
 
     // Cache info
     embed.addFields({
       name: '💾 Cache',
-      value: `${blockchain.getCacheSize()} entries`,
+      value: `${explorerApi.getCacheSize()} entries\nTTL: ${config.performance.cacheTTL}s`,
+      inline: true
+    });
+
+    // Memory usage
+    embed.addFields({
+      name: '🖥️ Memory',
+      value: `Heap: ${memoryUsage.heapUsed}\nRSS: ${memoryUsage.rss}`,
+      inline: true
+    });
+
+    // Backup info
+    embed.addFields({
+      name: '💿 Backup',
+      value: `Interval: ${config.database.backupInterval} hour(s)\nEnabled: ${config.database.backupEnabled ? '✅' : '❌'}`,
       inline: true
     });
 

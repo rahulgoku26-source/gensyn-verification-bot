@@ -3,7 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config/config');
 const logger = require('./utils/logger');
-const blockchain = require('./services/blockchain');
+const explorerApi = require('./services/explorerApi');
+const security = require('./utils/security');
 const AutoVerifyWorker = require('./workers/autoVerify');
 
 const client = new Client({
@@ -44,17 +45,18 @@ client.once('ready', async () => {
   logger.info(`🌐 Network: ${config.blockchain.chainName}`);
   logger.info(`⛓️  Chain ID: ${config.blockchain.chainId}`);
   logger.info(`📝 Contracts: ${config.contracts.length} configured`);
+  logger.info(`📊 Min Transactions: ${config.explorer.minTransactions}`);
   
   config.contracts.forEach((contract, index) => {
     logger.info(`   ${index + 1}. ${contract.name}: ${contract.address}`);
   });
 
-  // Test blockchain connection
-  const connectionTest = await blockchain.testConnection();
+  // Test Explorer API connection
+  const connectionTest = await explorerApi.testConnection();
   if (connectionTest.success) {
-    logger.info(`📦 Current Block: ${connectionTest.blockNumber}`);
+    logger.info(`📡 Explorer API: Connected`);
   } else {
-    logger.error('❌ Blockchain connection failed!', { 
+    logger.error('❌ Explorer API connection failed!', { 
       error: connectionTest.error 
     });
   }
@@ -142,9 +144,23 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-// Login
-logger.info('🚀 Starting Discord bot...');
-client.login(config.discord.token).catch(error => {
-  logger.error('Failed to login', { error: error.message });
-  process.exit(1);
-});
+// Login with security check
+async function startBot() {
+  // Security verification
+  if (config.security.masterPassword) {
+    const securityOk = await security.initialize();
+    if (!securityOk) {
+      process.exit(1);
+    }
+  } else {
+    logger.warn('⚠️  Running without password protection. Set MASTER_PASSWORD in .env for security.');
+  }
+
+  logger.info('🚀 Starting Discord bot...');
+  client.login(config.discord.token).catch(error => {
+    logger.error('Failed to login', { error: error.message });
+    process.exit(1);
+  });
+}
+
+startBot();

@@ -8,9 +8,8 @@ class Database {
     this.dbPath = config.database.path;
     this.failedLogPath = config.logging.failedLogPath;
     this.successLogPath = config.logging.successLogPath;
+    this.auditLogPath = config.logging.auditLogPath;
     this.data = {};
-    this.failedVerifications = [];
-    this.successfulVerifications = [];
     this.init();
   }
 
@@ -25,6 +24,12 @@ class Database {
     const logsDir = path.dirname(this.failedLogPath);
     if (!fs.existsSync(logsDir)) {
       fs.mkdirSync(logsDir, { recursive: true });
+    }
+
+    // Ensure backups directory exists
+    const backupsDir = path.join(path.dirname(this.dbPath), 'backups');
+    if (!fs.existsSync(backupsDir)) {
+      fs.mkdirSync(backupsDir, { recursive: true });
     }
 
     // Load main database
@@ -42,28 +47,6 @@ class Database {
       logger.info('New database created');
     }
 
-    // Load failed verifications log
-    if (fs.existsSync(this.failedLogPath)) {
-      try {
-        const rawData = fs.readFileSync(this.failedLogPath, 'utf8');
-        this.failedVerifications = JSON.parse(rawData);
-      } catch (error) {
-        logger.error('Failed to load failed verifications log', { error: error.message });
-        this.failedVerifications = [];
-      }
-    }
-
-    // Load successful verifications log
-    if (fs.existsSync(this.successLogPath)) {
-      try {
-        const rawData = fs.readFileSync(this.successLogPath, 'utf8');
-        this.successfulVerifications = JSON.parse(rawData);
-      } catch (error) {
-        logger.error('Failed to load successful verifications log', { error: error.message });
-        this.successfulVerifications = [];
-      }
-    }
-
     // Start backup schedule
     if (config.database.backupEnabled) {
       this.startBackupSchedule();
@@ -78,35 +61,171 @@ class Database {
     }
   }
 
-  saveFailedLog() {
+  /**
+   * Format timestamp for logs
+   */
+  formatTimestamp() {
+    const now = new Date();
+    return now.toISOString().replace('T', ' ').substring(0, 19);
+  }
+
+  /**
+   * Append to simple text log file
+   */
+  appendToLog(filePath, entry) {
     try {
-      fs.writeFileSync(this.failedLogPath, JSON.stringify(this.failedVerifications, null, 2));
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.appendFileSync(filePath, entry + '\n');
     } catch (error) {
-      logger.error('Failed to save failed verifications log', { error: error.message });
+      logger.error('Failed to append to log', { error: error.message, path: filePath });
     }
   }
 
-  saveSuccessLog() {
+  /**
+   * Read lines from log file (most recent first)
+   */
+  readLogLines(filePath, limit = 50) {
     try {
-      fs.writeFileSync(this.successLogPath, JSON.stringify(this.successfulVerifications, null, 2));
+      if (!fs.existsSync(filePath)) {
+        return [];
+      }
+      const content = fs.readFileSync(filePath, 'utf8');
+      const lines = content.split('\n').filter(line => line.trim());
+      return lines.slice(-limit).reverse();
     } catch (error) {
-      logger.error('Failed to save successful verifications log', { error: error.message });
+      logger.error('Failed to read log', { error: error.message, path: filePath });
+      return [];
     }
+  }
+
+  /**
+   * Trim log file to keep only recent entries
+   */
+  trimLogFile(filePath, maxEntries = config.logging.maxLogEntries) {
+    try {
+      if (!fs.existsSync(filePath)) return;
+      
+      const content = fs.readFileSync(filePath, 'utf8');
+      const lines = content.split('\n').filter(line => line.trim());
+      
+      if (lines.length > maxEntries) {
+        const trimmed = lines.slice(-maxEntries).join('\n');
+        fs.writeFileSync(filePath, trimmed + '\n');
+      }
+    } catch (error) {
+      logger.error('Failed to trim log', { error: error.message, path: filePath });
+    }
+  }
+
+  /**
+   * Record failed verification with simple one-line format
+   * Format: [TIMESTAMP] FAILED | Discord: username (id) | Wallet: 0x... | Contract: Name | Reason: ...
+   */
+  recordFailedVerification(data) {
+    const {
+      discordId,
+      discordUsername,
+      walletAddress,
+      contractId,
+      contractName,
+      txnCount = 0,
+      reason,
+    } = data;
+
+    const timestamp = this.formatTimestamp();
+    const wallet = walletAddress ? `${walletAddress.substring(0, 6)}...${walletAddress.slice(-3)}` : 'N/A';
+    
+    const logEntry = `[${timestamp}] FAILED | Discord: ${discordUsername || 'Unknown'} (${discordId}) | Wallet: ${wallet} | Contract: ${contractName || contractId} | Reason: ${reason}`;
+    
+    this.appendToLog(this.failedLogPath, logEntry);
+    this.trimLogFile(this.failedLogPath);
+  }
+
+  /**
+   * Record successful verification with simple one-line format
+   * Format: [TIMESTAMP] SUCCESS | Discord: username (id) | Wallet: 0x... | Contract: Name | Txns: N | Role Assigned: ✅
+   */
+  recordSuccessfulVerification(data) {
+    const {
+      discordId,
+      discordUsername,
+      walletAddress,
+      contractId,
+      contractName,
+      txnCount = 0,
+      roleAssigned = true,
+    } = data;
+
+    const timestamp = this.formatTimestamp();
+    const wallet = walletAddress ? `${walletAddress.substring(0, 6)}...${walletAddress.slice(-3)}` : 'N/A';
+    
+    const logEntry = `[${timestamp}] SUCCESS | Discord: ${discordUsername || 'Unknown'} (${discordId}) | Wallet: ${wallet} | Contract: ${contractName || contractId} | Txns: ${txnCount} | Role Assigned: ${roleAssigned ? '✅' : '❌'}`;
+    
+    this.appendToLog(this.successLogPath, logEntry);
+    this.trimLogFile(this.successLogPath);
+  }
+
+  /**
+   * Get failed verifications (parsed from log file)
+   */
+  getFailedVerifications(limit = 50) {
+    return this.readLogLines(this.failedLogPath, limit);
+  }
+
+  /**
+   * Get successful verifications (parsed from log file)
+   */
+  getSuccessfulVerifications(limit = 50) {
+    return this.readLogLines(this.successLogPath, limit);
   }
 
   startBackupSchedule() {
-    const intervalMs = config.database.backupInterval * 60 * 60 * 1000;
+    const intervalMs = config.database.backupInterval * 60 * 60 * 1000; // hours to ms
     setInterval(() => this.backup(), intervalMs);
-    logger.info(`Database backup scheduled every ${config.database.backupInterval} hours`);
+    logger.info(`Database backup scheduled every ${config.database.backupInterval} hour(s)`);
   }
 
   backup() {
     try {
-      const backupPath = `${this.dbPath}.backup.${Date.now()}`;
+      const backupsDir = path.join(path.dirname(this.dbPath), 'backups');
+      if (!fs.existsSync(backupsDir)) {
+        fs.mkdirSync(backupsDir, { recursive: true });
+      }
+      
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupPath = path.join(backupsDir, `users-${timestamp}.json`);
+      
       fs.copyFileSync(this.dbPath, backupPath);
       logger.info('Database backup created', { path: backupPath });
+
+      // Clean old backups (keep last 24)
+      this.cleanOldBackups(backupsDir, 24);
     } catch (error) {
       logger.error('Failed to create backup', { error: error.message });
+    }
+  }
+
+  cleanOldBackups(backupsDir, keepCount) {
+    try {
+      const files = fs.readdirSync(backupsDir)
+        .filter(f => f.startsWith('users-') && f.endsWith('.json'))
+        .map(f => ({
+          name: f,
+          path: path.join(backupsDir, f),
+          time: fs.statSync(path.join(backupsDir, f)).mtime.getTime()
+        }))
+        .sort((a, b) => b.time - a.time);
+
+      // Remove old backups
+      files.slice(keepCount).forEach(f => {
+        fs.unlinkSync(f.path);
+        logger.debug('Removed old backup', { file: f.name });
+      });
+    } catch (error) {
+      logger.error('Failed to clean old backups', { error: error.message });
     }
   }
 
@@ -177,8 +296,8 @@ class Database {
     return { wallet, ...this.data[wallet] };
   }
 
-  // Record verification for a contract with role tracking
-  recordVerification(walletAddress, contractId, txHash, blockNumber, roleId = null, roleName = null) {
+  // Record verification for a contract with role tracking and txn count
+  recordVerification(walletAddress, contractId, txHash, blockNumber, roleId = null, roleName = null, txnCount = 0) {
     const normalized = walletAddress.toLowerCase();
     if (!this.data[normalized]) return false;
 
@@ -196,6 +315,7 @@ class Database {
       verified: true,
       txHash,
       blockNumber,
+      txnCount,
       verifiedAt: timestamp
     };
 
@@ -209,7 +329,7 @@ class Database {
     this.save();
     logger.info('Verification recorded', { wallet: normalized, contractId, roleId });
 
-    // Log to successful verifications
+    // Log to successful verifications (simple text format)
     const userData = this.data[normalized];
     this.recordSuccessfulVerification({
       discordId: userData.discordId,
@@ -217,68 +337,11 @@ class Database {
       walletAddress: normalized,
       contractId,
       contractName: config.getContractById(contractId)?.name || contractId,
-      roleId,
-      roleName,
-      txHash,
-      blockNumber,
-      timestamp
+      txnCount,
+      roleAssigned: true
     });
 
     return true;
-  }
-
-  // Record failed verification with detailed reason
-  recordFailedVerification(data) {
-    const {
-      discordId,
-      discordUsername,
-      walletAddress,
-      contractId,
-      contractName,
-      reason,
-      timestamp = new Date().toISOString()
-    } = data;
-
-    this.failedVerifications.push({
-      discordId,
-      discordUsername,
-      walletAddress: walletAddress?.toLowerCase(),
-      contractId,
-      contractName,
-      reason,
-      timestamp
-    });
-
-    // Keep only configured number of failed verifications to prevent file from growing too large
-    const maxEntries = config.logging.maxLogEntries;
-    if (this.failedVerifications.length > maxEntries) {
-      this.failedVerifications = this.failedVerifications.slice(-maxEntries);
-    }
-
-    this.saveFailedLog();
-  }
-
-  // Record successful verification
-  recordSuccessfulVerification(data) {
-    this.successfulVerifications.push(data);
-
-    // Keep only configured number of successful verifications
-    const maxEntries = config.logging.maxLogEntries;
-    if (this.successfulVerifications.length > maxEntries) {
-      this.successfulVerifications = this.successfulVerifications.slice(-maxEntries);
-    }
-
-    this.saveSuccessLog();
-  }
-
-  // Get failed verifications
-  getFailedVerifications(limit = 50) {
-    return this.failedVerifications.slice(-limit).reverse();
-  }
-
-  // Get successful verifications
-  getSuccessfulVerifications(limit = 50) {
-    return this.successfulVerifications.slice(-limit).reverse();
   }
 
   // Check if user is verified for a contract
@@ -383,25 +446,82 @@ class Database {
       };
     }
 
+    // Count log entries
+    const failedLogs = this.getFailedVerifications(1000);
+    const successLogs = this.getSuccessfulVerifications(1000);
+
     return {
       totalUsers,
       verifiedUsers,
       pendingUsers: totalUsers - verifiedUsers,
       contractStats,
       roleDistribution,
-      failedCount: this.failedVerifications.length,
-      successCount: this.successfulVerifications.length
+      failedCount: failedLogs.length,
+      successCount: successLogs.length
     };
   }
 
-  // Export all data
+  // Export all data (flat format for easy TXT export)
   exportAllData() {
+    const flatUsers = [];
+    
+    for (const [wallet, userData] of Object.entries(this.data)) {
+      const contractStatus = {};
+      for (const contract of config.contracts) {
+        const verification = userData.verifications?.[contract.id];
+        const txnCount = verification?.txnCount || 0;
+        contractStatus[contract.name] = verification?.verified 
+          ? `✅ (${txnCount} txns)` 
+          : `❌ (${txnCount} txns)`;
+      }
+      
+      flatUsers.push({
+        wallet,
+        discordId: userData.discordId,
+        discordUsername: userData.discordUsername || 'Unknown',
+        linkedAt: userData.linkedAt?.split('T')[0] || 'N/A',
+        ...contractStatus
+      });
+    }
+
     return {
-      users: this.data,
-      failedVerifications: this.failedVerifications,
-      successfulVerifications: this.successfulVerifications,
+      users: flatUsers,
+      rawData: this.data,
+      failedVerifications: this.getFailedVerifications(100),
+      successfulVerifications: this.getSuccessfulVerifications(100),
       exportedAt: new Date().toISOString()
     };
+  }
+
+  /**
+   * Export users in flat TXT format
+   * Format: WALLET | DISCORD_ID | DISCORD_NAME | CONTRACT1 | CONTRACT2 | ... | LINKED_AT
+   */
+  exportFlatFormat() {
+    const header = ['WALLET', 'DISCORD_ID', 'DISCORD_NAME'];
+    config.contracts.forEach(c => header.push(c.name.toUpperCase()));
+    header.push('LINKED_AT');
+    
+    const lines = [header.join(' | ')];
+    
+    for (const [wallet, userData] of Object.entries(this.data)) {
+      const row = [
+        wallet,
+        userData.discordId,
+        userData.discordUsername || 'Unknown'
+      ];
+      
+      for (const contract of config.contracts) {
+        const verification = userData.verifications?.[contract.id];
+        const txnCount = verification?.txnCount || 0;
+        row.push(verification?.verified ? `✅ (${txnCount} txns)` : `❌ (${txnCount} txns)`);
+      }
+      
+      row.push(userData.linkedAt?.split('T')[0] || 'N/A');
+      lines.push(row.join(' | '));
+    }
+    
+    return lines.join('\n');
   }
 }
 

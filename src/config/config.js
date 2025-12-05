@@ -8,7 +8,20 @@ const config = {
     verificationChannelId: process.env.VERIFICATION_CHANNEL_ID,
   },
 
-  // Blockchain Configuration
+  // Security Configuration
+  security: {
+    masterPassword: process.env.MASTER_PASSWORD,
+    encryptionEnabled: process.env.ENCRYPTION_ENABLED !== 'false',
+    autoLockTimeout: parseInt(process.env.AUTO_LOCK_TIMEOUT) || 5, // minutes
+  },
+
+  // Explorer API Configuration
+  explorer: {
+    apiUrl: process.env.EXPLORER_API_URL || 'https://gensyn-testnet.explorer.alchemy.com/api',
+    minTransactions: parseInt(process.env.MIN_TRANSACTIONS) || 3,
+  },
+
+  // Blockchain Configuration (kept for compatibility)
   blockchain: {
     chainId: process.env.CHAIN_ID || '685685',
     chainName: process.env.CHAIN_NAME || 'Gensyn Testnet',
@@ -30,7 +43,7 @@ const config = {
   database: {
     path: process.env.DB_PATH || './data/users.json',
     backupEnabled: process.env.DB_BACKUP_ENABLED !== 'false',
-    backupInterval: parseInt(process.env.DB_BACKUP_INTERVAL) || 24,
+    backupInterval: parseInt(process.env.DB_BACKUP_INTERVAL) || 1, // Changed to 1 hour
   },
 
   // Logging Settings
@@ -38,8 +51,9 @@ const config = {
     level: process.env.LOG_LEVEL || 'info',
     errorLogPath: './logs/error.log',
     combinedLogPath: './logs/combined.log',
-    failedLogPath: process.env.FAILED_LOG_PATH || './logs/failed_verifications.json',
-    successLogPath: process.env.SUCCESS_LOG_PATH || './logs/successful_verifications.json',
+    failedLogPath: process.env.FAILED_LOG_PATH || './logs/failed.txt',
+    successLogPath: process.env.SUCCESS_LOG_PATH || './logs/success.txt',
+    auditLogPath: './logs/audit.log',
     maxLogEntries: parseInt(process.env.MAX_LOG_ENTRIES) || 1000,
   },
 
@@ -47,6 +61,7 @@ const config = {
   rateLimit: {
     verifyCommandCooldown: parseInt(process.env.VERIFY_COOLDOWN) || 60,
     linkCommandCooldown: parseInt(process.env.LINK_COOLDOWN) || 30,
+    explorerApiRate: parseInt(process.env.EXPLORER_API_RATE) || 100, // requests per minute
   },
 
   // Feature Flags
@@ -60,23 +75,26 @@ const config = {
   performance: {
     maxConcurrentVerifications: parseInt(process.env.MAX_CONCURRENT_VERIFICATIONS) || 10,
     delayBetweenChecks: parseInt(process.env.DELAY_BETWEEN_CHECKS) || 100,
+    batchSize: parseInt(process.env.BATCH_SIZE) || 50,
+    cacheTTL: parseInt(process.env.CACHE_TTL) || 300, // 5 minutes in seconds
   },
 };
 
 // Load contracts dynamically (supports up to 20 contracts)
+// Note: RPC URL is now optional since we use Explorer API
 for (let i = 1; i <= 20; i++) {
   const address = process.env[`CONTRACT_${i}_ADDRESS`];
   const roleId = process.env[`CONTRACT_${i}_ROLE_ID`];
   const rpcUrl = process.env[`CONTRACT_${i}_RPC_URL`];
   const name = process.env[`CONTRACT_${i}_NAME`];
 
-  if (address && roleId && rpcUrl) {
+  if (address && roleId) {
     config.contracts.push({
       id: `contract${i}`,
       name: name || `Contract ${i}`,
       address: address,
       roleId: roleId,
-      rpcUrl: rpcUrl,
+      rpcUrl: rpcUrl || null, // RPC URL is now optional
     });
   }
 }
@@ -144,13 +162,16 @@ function validateConfig() {
   }
 
   if (config.contracts.length === 0) {
-    throw new Error('❌ At least one contract must be configured (ADDRESS + ROLE_ID + RPC_URL)');
+    throw new Error('❌ At least one contract must be configured (ADDRESS + ROLE_ID)');
   }
 
   console.log(`✅ Loaded ${config.contracts.length} contract(s)`);
   config.contracts.forEach((c, i) => {
     console.log(`   ${i + 1}. ${c.name}: ${c.address.substring(0, 10)}... → Role: ${c.roleId}`);
   });
+  
+  console.log(`📡 Explorer API: ${config.explorer.apiUrl}`);
+  console.log(`📊 Min Transactions: ${config.explorer.minTransactions}`);
 }
 
 validateConfig();
