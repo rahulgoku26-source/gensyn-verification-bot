@@ -220,10 +220,66 @@ module.exports = {
         }
       }
 
+      // Send detailed log to log channel
+      if (config.discord.logChannelId) {
+        try {
+          const logChannel = interaction.guild.channels.cache.get(config.discord.logChannelId);
+          if (logChannel) {
+            const newRolesAdded = newlyVerified.filter(v => v.isNew).map(v => v.role);
+            const logEmbed = new EmbedBuilder()
+              .setTitle('📋 Verification Log')
+              .setColor(verifiedCount > 0 ? 0x00ff00 : 0xff0000)
+              .addFields(
+                { name: '👤 User', value: `${interaction.user.tag} (${discordId})`, inline: true },
+                { name: '🔗 Address', value: `\`${wallet.substring(0, 10)}...${wallet.slice(-4)}\``, inline: true },
+                { name: '📊 Results', value: `${verifiedCount}/${totalApps} eligible`, inline: true },
+                { name: '🔵 CodeAssist', value: results.codeAssist.message, inline: false },
+                { name: '🟢 BlockAssist', value: results.blockAssist.message, inline: false },
+                { name: '⚖️ Judge', value: results.judge.message, inline: false },
+                { name: '🐝 RLSwarm', value: results.rlSwarm.message, inline: false }
+              )
+              .setTimestamp();
+
+            if (newRolesAdded.length > 0) {
+              logEmbed.addFields({ name: '🎭 Roles Added', value: newRolesAdded.join(', '), inline: false });
+            }
+            
+            await logChannel.send({ embeds: [logEmbed] });
+          }
+        } catch (error) {
+          logger.error('Failed to send log', { error: error.message });
+        }
+      }
+
       return interaction.editReply({ embeds: [embed] });
 
     } catch (error) {
       logger.error('Verification command error', { error: error.message });
+      
+      // Log failed verification attempt to log channel
+      if (config.discord.logChannelId) {
+        try {
+          const logChannel = interaction.guild.channels.cache.get(config.discord.logChannelId);
+          if (logChannel) {
+            const addressDisplay = wallet 
+              ? `\`${wallet.substring(0, 10)}...${wallet.slice(-4)}\`` 
+              : 'Unknown';
+            const errorEmbed = new EmbedBuilder()
+              .setTitle('❌ Verification Failed')
+              .setColor(0xff0000)
+              .addFields(
+                { name: '👤 User', value: `${interaction.user.tag} (${discordId})`, inline: true },
+                { name: '🔗 Address', value: addressDisplay, inline: true },
+                { name: '❌ Error', value: error.message || 'Unknown error', inline: false }
+              )
+              .setTimestamp();
+            
+            await logChannel.send({ embeds: [errorEmbed] });
+          }
+        } catch (logError) {
+          logger.error('Failed to send error log', { error: logError.message });
+        }
+      }
       
       let errorMessage = `❌ Verification failed: ${error.message}`;
       if (error.message.includes('Invalid Ethereum address')) {
