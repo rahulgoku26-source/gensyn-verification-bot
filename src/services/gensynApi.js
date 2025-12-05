@@ -95,6 +95,7 @@ class GensynApiService {
           totalWins += Number(wins);
         } catch (err) {
           console.error(`Error getting wins for peer ${peerId}:`, err.message);
+          // Continue with other peers even if one fails
         }
       }
       
@@ -110,13 +111,20 @@ class GensynApiService {
       };
     } catch (error) {
       console.error('RLSwarm verification error:', error.message);
-      return { eligible: false, peerIds: [], peerCount: 0, totalWins: 0, message: `RLSwarm: ❌ Error verifying` };
+      // More descriptive error message based on error type
+      let errorMessage = 'Error connecting to smart contract';
+      if (error.message.includes('network')) {
+        errorMessage = 'Network error connecting to Gensyn RPC';
+      } else if (error.message.includes('timeout')) {
+        errorMessage = 'Contract call timed out';
+      }
+      return { eligible: false, peerIds: [], peerCount: 0, totalWins: 0, message: `RLSwarm: ❌ ${errorMessage}` };
     }
   }
 
   async verifyAll(address) {
     if (!ethers.isAddress(address)) {
-      throw new Error('Invalid Ethereum address format');
+      throw new Error('Invalid Gensyn Dashboard address format');
     }
     
     const normalizedAddress = ethers.getAddress(address);
