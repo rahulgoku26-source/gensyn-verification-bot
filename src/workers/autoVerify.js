@@ -168,6 +168,9 @@ class AutoVerifyWorker {
           
           result.newVerifications++;
           
+          // Log successful auto-verification to terminal
+          console.log(`[${new Date().toISOString()}] ✅ SUCCESS | Discord: ${discordUsername} (${userData.discordId}) | Wallet: ${wallet.substring(0, 10)}...${wallet.slice(-4)} | Contract: ${verificationResult.contractName} | Txns: ${verificationResult.txnCount} | Role Assigned: ${roleAssigned ? '✅' : '❌'}`);
+          
           logger.info(`✅ Auto-verified: ${discordUsername}`, { 
             wallet: wallet.substring(0, 10) + '...', 
             contract: verificationResult.contractName,
@@ -179,6 +182,9 @@ class AutoVerifyWorker {
           await this.sendAnnouncement(userData.discordId, discordUsername, verificationResult, roleName);
 
         } else if (!verificationResult.success && !database.isVerified(wallet, verificationResult.contractId)) {
+          // Log failed auto-verification to terminal
+          console.log(`[${new Date().toISOString()}] ❌ FAILED  | Discord: ${discordUsername} (${userData.discordId}) | Wallet: ${wallet.substring(0, 10)}...${wallet.slice(-4)} | Contract: ${verificationResult.contractName} | Txns: ${verificationResult.txnCount || 0} | Reason: ${verificationResult.error}`);
+          
           // Record failed verification
           database.recordFailedVerification({
             discordId: userData.discordId,
