@@ -54,17 +54,24 @@ class AutoVerifyWorker {
         const batch = batches[batchIndex];
         const batchStartTime = Date.now();
 
-        // Process batch items in parallel
-        const batchResults = await Promise.all(
+        // Process batch items in parallel using Promise.allSettled for better error handling
+        const batchResults = await Promise.allSettled(
           batch.map(userData => this.processUser(userData))
         );
 
-        // Aggregate results
-        for (const result of batchResults) {
+        // Aggregate results, handling both fulfilled and rejected promises
+        for (const promiseResult of batchResults) {
           processed++;
-          newVerifications += result.newVerifications;
-          failedVerifications += result.failedVerifications;
-          rolesAssigned.push(...result.rolesAssigned);
+          if (promiseResult.status === 'fulfilled') {
+            const result = promiseResult.value;
+            newVerifications += result.newVerifications;
+            failedVerifications += result.failedVerifications;
+            rolesAssigned.push(...result.rolesAssigned);
+          } else {
+            // Promise was rejected - log the error but continue
+            logger.debug('User processing failed', { error: promiseResult.reason?.message });
+            failedVerifications++;
+          }
         }
 
         const batchTime = Date.now() - batchStartTime;

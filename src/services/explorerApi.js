@@ -103,7 +103,13 @@ class ExplorerApiService {
       }
 
       if (data.status !== '1') {
-        throw new Error(data.message || 'Unknown API error');
+        const errorMsg = data.message || 'Unknown API error';
+        logger.error('Explorer API returned error', {
+          wallet: normalizedAddress.substring(0, 10) + '...',
+          status: data.status,
+          message: errorMsg
+        });
+        throw new Error(errorMsg);
       }
 
       const transactions = data.result || [];

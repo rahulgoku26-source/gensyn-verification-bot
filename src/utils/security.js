@@ -320,7 +320,7 @@ class SecurityService {
   }
 
   /**
-   * Verify password against configured password
+   * Verify password against configured password using timing-safe comparison
    * @param {string} password - Password to verify
    * @returns {boolean} - True if password matches
    */
@@ -332,7 +332,23 @@ class SecurityService {
       return true;
     }
     
-    return password === configuredPassword;
+    // Use timing-safe comparison to prevent timing attacks
+    try {
+      const configBuffer = Buffer.from(configuredPassword, 'utf8');
+      const inputBuffer = Buffer.from(password, 'utf8');
+      
+      // If lengths differ, comparison will fail, but we still do the work
+      // to prevent timing attacks from revealing password length
+      if (configBuffer.length !== inputBuffer.length) {
+        // Do a dummy comparison to maintain constant time
+        crypto.timingSafeEqual(configBuffer, configBuffer);
+        return false;
+      }
+      
+      return crypto.timingSafeEqual(configBuffer, inputBuffer);
+    } catch (error) {
+      return false;
+    }
   }
 
   /**
