@@ -1,76 +1,81 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const explorerApi = require('../services/explorerApi');
 const config = require('../config/config');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('info')
-    .setDescription('Show contract information')
-    .addStringOption(option =>
-      option.setName('contract')
-        .setDescription('Show specific contract info (optional)')
-        .setRequired(false)
-        .addChoices(...config.contracts.map(c => ({ name: c.name, value: c.id })))),
+    .setDescription('Show Gensyn verification information'),
   
   async execute(interaction) {
-    const specificContract = interaction.options.getString('contract');
-    const minTxns = config.explorer.minTransactions;
+    // Define applications
+    const applications = [
+      { 
+        name: 'CodeAssist', 
+        key: 'codeAssist', 
+        roleId: config.roles.codeAssist,
+        description: 'Participate in CodeAssist to earn this role',
+        eligibility: 'Participation > 0'
+      },
+      { 
+        name: 'BlockAssist', 
+        key: 'blockAssist', 
+        roleId: config.roles.blockAssist,
+        description: 'Participate in BlockAssist to earn this role',
+        eligibility: 'Participation > 0'
+      },
+      { 
+        name: 'Judge (Verdict)', 
+        key: 'judge', 
+        roleId: config.roles.judge,
+        description: 'Place bets in the Judge/Verdict application',
+        eligibility: 'Bets placed > 0'
+      },
+      { 
+        name: 'RLSwarm (The Swarm)', 
+        key: 'rlSwarm', 
+        roleId: config.roles.rlSwarm,
+        description: 'Run a node and win in RLSwarm',
+        eligibility: 'Peer ID registered + Wins > 0'
+      }
+    ];
+
+    const configuredApps = applications.filter(a => a.roleId);
     
-    if (specificContract) {
-      // Show info for specific contract
-      const contract = config.getContractById(specificContract);
-      
-      const embed = new EmbedBuilder()
-        .setColor(0x0099ff)
-        .setTitle(`🔷 ${contract.name}`)
-        .setDescription('Smart contract verification details (via Block Explorer API)')
-        .addFields(
-          { name: 'Network', value: config.blockchain.chainName, inline: true },
-          { name: 'Chain ID', value: config.blockchain.chainId, inline: true },
-          { name: 'Min Transactions', value: `${minTxns}`, inline: true },
-          { name: 'Contract Address', value: `\`${contract.address}\``, inline: false },
-          { name: 'Role Assigned', value: `<@&${contract.roleId}>`, inline: true },
-          { name: 'API Method', value: 'txlistinternal', inline: true },
-          { 
-            name: '📋 How to Verify', 
-            value: `1. \`/link wallet:YOUR_ADDRESS\`\n2. Send **at least ${minTxns} transactions** to this contract\n3. \`/verify contract:${contract.name}\` or just \`/verify\``,
-            inline: false
-          }
-        )
-        .setFooter({ text: 'Gensyn Testnet Verification Bot | Block Explorer API' })
-        .setTimestamp();
-      
-      return interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-    
-    // Show info for all contracts
+    // Show info for all applications
     const embed = new EmbedBuilder()
       .setColor(0x0099ff)
-      .setTitle('🌐 All Available Contracts')
-      .setDescription(`We support **${config.contracts.length} contract(s)** for verification on ${config.blockchain.chainName}\n\n**Minimum ${minTxns} transactions** required per contract`)
+      .setTitle('🌐 Gensyn Verification System')
+      .setDescription(`We support **${configuredApps.length} application(s)** for verification\n\nVerification uses the **Gensyn Dashboard API** and **Smart Contract calls**.`)
       .addFields(
-        { name: 'Network', value: config.blockchain.chainName, inline: true },
-        { name: 'Chain ID', value: config.blockchain.chainId, inline: true },
-        { name: 'API', value: 'Block Explorer', inline: true }
+        { name: 'Network', value: config.blockchain.chainName || 'Gensyn Testnet', inline: true },
+        { name: 'Dashboard', value: 'dashboard.gensyn.ai', inline: true },
+        { name: 'API', value: 'Gensyn Dashboard', inline: true }
       );
     
-    // Add each contract as a field
-    config.contracts.forEach((contract, index) => {
-      const shortAddress = `${contract.address.slice(0, 10)}...${contract.address.slice(-8)}`;
+    // Add each application as a field
+    applications.forEach((app, index) => {
+      if (!app.roleId) return;
+      
       embed.addFields({
-        name: `${index + 1}. ${contract.name}`,
-        value: `**Address:** \`${shortAddress}\`\n**Role:** <@&${contract.roleId}>`,
+        name: `${index + 1}. ${app.name}`,
+        value: `**Description:** ${app.description}\n**Eligibility:** ${app.eligibility}\n**Role:** <@&${app.roleId}>`,
         inline: false
       });
     });
     
     embed.addFields({
       name: '📋 How to Get Verified',
-      value: `1. \`/link wallet:YOUR_ADDRESS\` - Link your wallet\n2. Send **at least ${minTxns} transactions** to any contract above\n3. \`/verify\` - Check all contracts OR \`/verify contract:Name\` - Check specific contract`,
+      value: `1. \`/link wallet:YOUR_ADDRESS\` - Link your **Gensyn Dashboard Address**\n2. Participate in any of the applications above\n3. \`/verify\` - Check your eligibility and get roles`,
+      inline: false
+    });
+
+    embed.addFields({
+      name: '⚠️ Important',
+      value: 'Use your **Gensyn Dashboard Address** (found on dashboard.gensyn.ai), NOT your external wallet address.',
       inline: false
     });
     
-    embed.setFooter({ text: 'Use /info contract:Name for detailed contract info | Block Explorer API' });
+    embed.setFooter({ text: 'Data from Gensyn Dashboard API | Run /verify to check eligibility' });
     embed.setTimestamp();
     
     return interaction.reply({ embeds: [embed], ephemeral: true });

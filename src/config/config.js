@@ -8,6 +8,14 @@ const config = {
     verificationChannelId: process.env.VERIFICATION_CHANNEL_ID,
   },
 
+  // Gensyn Application Role IDs
+  roles: {
+    codeAssist: process.env.CODEASSIST_ROLE_ID,
+    blockAssist: process.env.BLOCKASSIST_ROLE_ID,
+    judge: process.env.JUDGE_ROLE_ID,
+    rlSwarm: process.env.RLSWARM_ROLE_ID,
+  },
+
   // Security Configuration
   security: {
     masterPassword: process.env.MASTER_PASSWORD,
@@ -163,17 +171,40 @@ function validateConfig() {
     throw new Error('❌ Missing DISCORD_TOKEN in environment variables');
   }
 
-  if (config.contracts.length === 0) {
-    throw new Error('❌ At least one contract must be configured (ADDRESS + ROLE_ID)');
+  // Check if at least one Gensyn role is configured
+  const configuredRoles = Object.entries(config.roles).filter(([key, value]) => value);
+  
+  if (configuredRoles.length === 0 && config.contracts.length === 0) {
+    console.warn('⚠️  No Gensyn roles or legacy contracts configured');
   }
 
-  console.log(`✅ Loaded ${config.contracts.length} contract(s)`);
-  config.contracts.forEach((c, i) => {
-    console.log(`   ${i + 1}. ${c.name}: ${c.address.substring(0, 10)}... → Role: ${c.roleId}`);
-  });
+  // Show Gensyn role configuration
+  console.log('✅ Gensyn Verification System');
+  console.log('   Applications:');
   
-  console.log(`📡 Explorer API: ${config.explorer.apiUrl}`);
-  console.log(`📊 Min Transactions: ${config.explorer.minTransactions}`);
+  const roleNames = {
+    codeAssist: 'CodeAssist',
+    blockAssist: 'BlockAssist', 
+    judge: 'Judge',
+    rlSwarm: 'RLSwarm'
+  };
+  
+  for (const [key, value] of Object.entries(config.roles)) {
+    const name = roleNames[key] || key;
+    if (value) {
+      console.log(`   ✅ ${name}: Role ID ${value}`);
+    } else {
+      console.log(`   ⚠️  ${name}: Not configured`);
+    }
+  }
+
+  // Show legacy contracts if any
+  if (config.contracts.length > 0) {
+    console.log(`\n   Legacy Contracts: ${config.contracts.length}`);
+    config.contracts.forEach((c, i) => {
+      console.log(`   ${i + 1}. ${c.name}: ${c.address.substring(0, 10)}... → Role: ${c.roleId}`);
+    });
+  }
 }
 
 validateConfig();

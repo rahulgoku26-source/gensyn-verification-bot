@@ -1,156 +1,105 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { isAddress } = require('ethers');
-const explorerApi = require('../services/explorerApi');
+const gensynApi = require('../services/gensynApi');
 const config = require('../config/config');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('checkwallet')
-    .setDescription('Check if a wallet has valid transactions')
+    .setDescription('Check if an address is eligible for Gensyn verification')
     .addStringOption(option =>
       option.setName('address')
-        .setDescription('Wallet address to check')
-        .setRequired(true))
-    .addStringOption(option =>
-      option.setName('contract')
-        .setDescription('Specific contract to check (optional)')
-        .setRequired(false)
-        .addChoices(...config.contracts.map(c => ({ name: c.name, value: c.id })))),
+        .setDescription('Gensyn Dashboard address to check')
+        .setRequired(true)),
   
   async execute(interaction) {
     await interaction.deferReply({ ephemeral: true });
     
     const address = interaction.options.getString('address');
-    const specificContract = interaction.options.getString('contract');
     
     if (!isAddress(address)) {
-      return interaction.editReply('❌ Invalid wallet address format.');
+      return interaction.editReply('❌ Invalid address format. Please provide a valid Ethereum address (0x...).');
     }
     
-    const checkingMessage = specificContract
-      ? `🔍 Checking ${config.getContractById(specificContract).name}...`
-      : '🔍 Checking wallet transactions via Block Explorer API...';
+    await interaction.editReply('🔍 Checking Gensyn Dashboard eligibility...');
     
-    await interaction.editReply(checkingMessage);
-    
-    const minTxns = config.explorer.minTransactions;
-
-    if (specificContract) {
-      // Check specific contract
-      const contract = config.getContractById(specificContract);
-      const result = await explorerApi.verifySingleContract(address, contract);
+    try {
+      const results = await gensynApi.verifyAll(address);
       
-      if (result.success) {
-        const shortTxHash = result.hash ? `${result.hash.slice(0, 10)}...${result.hash.slice(-8)}` : 'N/A';
-        const shortAddress = `${address.slice(0, 10)}...${address.slice(-8)}`;
-        
-        const embed = new EmbedBuilder()
-          .setColor(0x00ff00)
-          .setTitle('✅ Valid Transactions Found')
-          .setDescription(`This wallet has enough transactions to **${contract.name}**`)
-          .addFields(
-            { name: 'Contract', value: contract.name, inline: true },
-            { name: 'Network', value: config.blockchain.chainName, inline: true },
-            { name: 'Transactions', value: `${result.txnCount} (min: ${minTxns})`, inline: true },
-            { name: 'Wallet Address', value: `\`${shortAddress}\``, inline: false },
-            { name: 'Contract Address', value: `\`${contract.address}\``, inline: false },
-            { name: 'Latest Tx Hash', value: `\`${shortTxHash}\``, inline: false },
-            { name: 'Status', value: '✅ Eligible for verification', inline: true }
-          )
-          .setFooter({ text: 'This wallet can be verified for this contract' })
-          .setTimestamp();
-        
-        return interaction.editReply({ embeds: [embed] });
-      } else {
-        const embed = new EmbedBuilder()
-          .setColor(0xff0000)
-          .setTitle('❌ Not Enough Transactions')
-          .setDescription(`This wallet doesn't have enough transactions to **${contract.name}**`)
-          .addFields(
-            { name: 'Wallet Address', value: `\`${address}\``, inline: false },
-            { name: 'Transactions Found', value: `${result.txnCount}`, inline: true },
-            { name: 'Minimum Required', value: `${minTxns}`, inline: true },
-            { name: 'Error', value: result.error, inline: false },
-            { name: 'Network', value: config.blockchain.chainName, inline: true }
-          )
-          .setFooter({ text: 'Send more transactions to this contract' });
-        
-        return interaction.editReply({ embeds: [embed] });
-      }
-    }
-    
-    // Check all contracts
-    const result = await explorerApi.checkWallet(address);
-    
-    if (result.found) {
       const shortAddress = `${address.slice(0, 10)}...${address.slice(-8)}`;
+      const eligibleCount = results.summary.totalEligible;
+      const totalApps = 4;
       
       const embed = new EmbedBuilder()
-        .setColor(0x00ff00)
-        .setTitle('✅ Wallet Analysis Complete')
-        .setDescription(`Found **${result.verifiedCount}/${result.totalContracts}** contracts eligible for verification`)
+        .setColor(eligibleCount > 0 ? 0x00ff00 : 0xff0000)
+        .setTitle(eligibleCount > 0 ? '✅ Eligibility Check Complete' : '❌ Eligibility Check Complete')
+        .setDescription(`**Address:** \`${shortAddress}\`\n**Eligible for:** ${eligibleCount}/${totalApps} applications`)
         .addFields(
-          { name: 'Wallet', value: `\`${shortAddress}\``, inline: false },
-          { name: 'Network', value: config.blockchain.chainName, inline: true },
-          { name: 'Min Txns Required', value: `${minTxns}`, inline: true }
+          { name: 'Network', value: config.blockchain.chainName || 'Gensyn Testnet', inline: true },
+          { name: 'Data Source', value: 'Gensyn Dashboard API', inline: true }
         );
       
-      // Add per-contract status
-      let contractStatus = '';
-      for (const r of result.results) {
-        const status = r.verified ? '✅' : '❌';
-        contractStatus += `${status} **${r.contract.name}**: ${r.txnCount} txns\n`;
+      // Add per-application status
+      let appStatus = '';
+      
+      // CodeAssist
+      const ca = results.codeAssist;
+      appStatus += ca.eligible 
+        ? `✅ **CodeAssist**: Participation: ${ca.participation}\n`
+        : `❌ **CodeAssist**: No participation\n`;
+      
+      // BlockAssist
+      const ba = results.blockAssist;
+      appStatus += ba.eligible 
+        ? `✅ **BlockAssist**: Participation: ${ba.participation}\n`
+        : `❌ **BlockAssist**: No participation\n`;
+      
+      // Judge
+      const judge = results.judge;
+      appStatus += judge.eligible 
+        ? `✅ **Judge**: Bets: ${judge.betsPlaced}, Points: ${judge.totalPoints}\n`
+        : `❌ **Judge**: No bets placed\n`;
+      
+      // RLSwarm
+      const rl = results.rlSwarm;
+      if (rl.eligible) {
+        appStatus += `✅ **RLSwarm**: Peers: ${rl.peerCount}, Wins: ${rl.totalWins}\n`;
+      } else {
+        if (rl.peerCount === 0) {
+          appStatus += `❌ **RLSwarm**: No peer IDs registered\n`;
+        } else {
+          appStatus += `❌ **RLSwarm**: Peers: ${rl.peerCount}, Wins: 0 (need wins)\n`;
+        }
       }
       
       embed.addFields({
-        name: '📋 Contract Status',
-        value: contractStatus,
+        name: '📋 Application Status',
+        value: appStatus,
         inline: false
       });
       
-      embed.setFooter({ text: 'Use /verify to claim your roles' });
-      embed.setTimestamp();
-      
-      return interaction.editReply({ embeds: [embed] });
-    } else {
-      const embed = new EmbedBuilder()
-        .setColor(0xff0000)
-        .setTitle('❌ No Valid Transactions Found')
-        .setDescription(`This wallet doesn't have enough transactions to any configured contract`)
-        .addFields(
-          { name: 'Wallet Address', value: `\`${address}\``, inline: false },
-          { name: 'Min Txns Required', value: `${minTxns}`, inline: true },
-          { name: 'Error', value: result.error || 'No transactions meet minimum requirement', inline: false },
-          { name: 'Network', value: config.blockchain.chainName, inline: true }
-        );
-      
-      // Show contract status if available
-      if (result.results) {
-        let contractStatus = '';
-        for (const r of result.results) {
-          contractStatus += `❌ **${r.contract.name}**: ${r.txnCount} txns\n`;
-        }
-        
+      if (eligibleCount > 0) {
         embed.addFields({
-          name: '📋 Contract Status',
-          value: contractStatus,
+          name: '💡 Next Steps',
+          value: 'Link this address with `/link wallet:ADDRESS` and run `/verify` to get your roles!',
+          inline: false
+        });
+      } else {
+        embed.addFields({
+          name: '💡 Tips',
+          value: '• Participate in Gensyn applications to become eligible\n• Make sure you\'re using your **Gensyn Dashboard Address**\n• Visit dashboard.gensyn.ai to check your participation',
           inline: false
         });
       }
       
-      const contractList = config.contracts
-        .map((c, i) => `${i + 1}. ${c.name}: \`${c.address}\``)
-        .join('\n');
-      
-      embed.addFields({
-        name: 'Available Contracts',
-        value: contractList,
-        inline: false
-      });
-      
-      embed.setFooter({ text: `Send at least ${minTxns} transactions to any contract above` });
+      embed.setFooter({ text: 'Data from Gensyn Dashboard API & Smart Contract' });
+      embed.setTimestamp();
       
       return interaction.editReply({ embeds: [embed] });
+      
+    } catch (error) {
+      console.error('Checkwallet error:', error.message);
+      return interaction.editReply(`❌ Failed to check address: ${error.message}`);
     }
   },
 };

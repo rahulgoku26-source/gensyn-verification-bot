@@ -1,6 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const database = require('../services/database');
-const explorerApi = require('../services/explorerApi');
 const performance = require('../utils/performance');
 const config = require('../config/config');
 
@@ -16,9 +15,6 @@ module.exports = {
     const stats = database.getStats();
     const perfStats = performance.getStats();
     const memoryUsage = performance.getMemoryUsage();
-    
-    // Test Explorer API connection
-    const connectionTest = await explorerApi.testConnection();
 
     const embed = new EmbedBuilder()
       .setTitle('📊 Bot Statistics')
@@ -30,57 +26,59 @@ module.exports = {
       )
       .setTimestamp();
 
-    // Explorer API status
+    // Gensyn API status
     let apiStatus = '';
-    if (connectionTest.success) {
-      apiStatus = `✅ **Block Explorer API**: Connected\n`;
-      apiStatus += `   URL: ${config.explorer.apiUrl.substring(0, 40)}...\n`;
-      apiStatus += `   Min Txns: ${config.explorer.minTransactions}`;
-    } else {
-      apiStatus = `❌ **Block Explorer API**: Error\n`;
-      apiStatus += `   Error: ${connectionTest.error}`;
-    }
+    apiStatus = `**Gensyn Dashboard API**: dashboard.gensyn.ai\n`;
+    apiStatus += `**RPC**: ${config.blockchain?.rpcUrl || 'gensyn-testnet.g.alchemy.com'}`;
     
     embed.addFields({ 
-      name: '🔗 API Connection Status', 
+      name: '🔗 API Configuration', 
       value: apiStatus, 
       inline: false 
     });
 
-    // Per-contract verification stats
-    let contractStats = '';
-    for (const [contractId, data] of Object.entries(stats.contractStats)) {
-      const percentage = stats.totalUsers > 0 
-        ? Math.round((data.verified / stats.totalUsers) * 100) 
-        : 0;
-      contractStats += `**${data.name}**: ${data.verified} verified (${percentage}%)\n`;
+    // Per-application role configuration
+    let roleConfig = '';
+    const roleMapping = {
+      'CodeAssist': config.roles.codeAssist,
+      'BlockAssist': config.roles.blockAssist,
+      'Judge': config.roles.judge,
+      'RLSwarm': config.roles.rlSwarm
+    };
+
+    for (const [appName, roleId] of Object.entries(roleMapping)) {
+      if (roleId) {
+        const role = interaction.guild.roles.cache.get(roleId);
+        const roleName = role?.name || 'Role not found';
+        roleConfig += `**${appName}**: ${roleName}\n`;
+      } else {
+        roleConfig += `**${appName}**: ⚠️ Not configured\n`;
+      }
     }
 
-    if (contractStats) {
-      embed.addFields({ 
-        name: '📝 Contract Verification Stats', 
-        value: contractStats, 
-        inline: false 
-      });
-    }
+    embed.addFields({ 
+      name: '🎭 Role Configuration', 
+      value: roleConfig || 'No roles configured', 
+      inline: false 
+    });
 
-    // Role distribution
-    let roleDistribution = '';
-    for (const [roleId, data] of Object.entries(stats.roleDistribution)) {
-      const role = interaction.guild.roles.cache.get(roleId);
-      const roleName = role?.name || data.name;
-      const percentage = stats.totalUsers > 0 
-        ? Math.round((data.count / stats.totalUsers) * 100) 
-        : 0;
-      roleDistribution += `**${roleName}**: ${data.count} users (${percentage}%)\n`;
-    }
+    // Legacy contract verification stats (if any)
+    if (Object.keys(stats.contractStats).length > 0) {
+      let contractStats = '';
+      for (const [contractId, data] of Object.entries(stats.contractStats)) {
+        const percentage = stats.totalUsers > 0 
+          ? Math.round((data.verified / stats.totalUsers) * 100) 
+          : 0;
+        contractStats += `**${data.name}**: ${data.verified} verified (${percentage}%)\n`;
+      }
 
-    if (roleDistribution) {
-      embed.addFields({ 
-        name: '🎭 Role Distribution', 
-        value: roleDistribution, 
-        inline: false 
-      });
+      if (contractStats) {
+        embed.addFields({ 
+          name: '📝 Legacy Contract Stats', 
+          value: contractStats, 
+          inline: false 
+        });
+      }
     }
 
     // Success/Failure counts
@@ -111,13 +109,6 @@ module.exports = {
     embed.addFields({
       name: '⚙️ Auto-Verify',
       value: `${autoVerifyStatus}\nBatch Size: ${config.performance.batchSize}`,
-      inline: true
-    });
-
-    // Cache info
-    embed.addFields({
-      name: '💾 Cache',
-      value: `${explorerApi.getCacheSize()} entries\nTTL: ${config.performance.cacheTTL}s`,
       inline: true
     });
 

@@ -1,6 +1,6 @@
 # 🤖 Gensyn Discord Verification Bot
 
-A high-performance Discord bot for verifying smart contract interactions on Gensyn Testnet using the **Block Explorer API**. Supports multi-contract verification, password protection, and optimized for **200-400 users/minute**.
+A Discord bot for verifying Gensyn Dashboard participation using the **Gensyn Dashboard API** and **Smart Contract calls**. Supports CodeAssist, BlockAssist, Judge (Verdict), and RLSwarm verification with automatic role assignment.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen)](https://nodejs.org/)
@@ -8,28 +8,24 @@ A high-performance Discord bot for verifying smart contract interactions on Gens
 ## ✨ Features
 
 ### Core Features
-- 🔗 **Block Explorer API Integration**: Uses `txlistinternal` endpoint with two-step verification (wallet txns → tx traces)
-- 🎭 **Multi-Contract Support**: Verify against up to 20 contracts with different Discord roles
-- 📊 **Transaction Count Verification**: Minimum 3 unique transactions required per contract
-- ⚡ **High Performance**: 200-400 users/minute with parallel processing
-- 🤖 **Auto-Verification**: Automatically checks and verifies users
+- 🔗 **Gensyn Dashboard API Integration**: Verify CodeAssist, BlockAssist, and Judge participation
+- ⛓️ **Smart Contract Verification**: RLSwarm verification via smart contract calls
+- 🎭 **Multi-Application Support**: Four applications with individual Discord roles
+- ⚡ **High Performance**: Parallel verification of all applications
+- 🔄 **Re-verification**: Users can run `/verify` anytime to check for new eligibility
+
+### Supported Applications
+| Application | Verification Method | Eligibility Criteria |
+|-------------|--------------------|--------------------|
+| **CodeAssist** | Dashboard API | Participation > 0 |
+| **BlockAssist** | Dashboard API | Participation > 0 |
+| **Judge (Verdict)** | Dashboard API | Has bets placed or entries |
+| **RLSwarm (The Swarm)** | Smart Contract | Peer ID registered + Wins > 0 |
 
 ### Security Features
 - 🔐 **Password Protection**: AES-256 encryption for sensitive files
 - 🔒 **Auto-Lock**: 5-minute inactivity timeout
 - 🛡️ **Token Masking**: Sensitive data hidden in logs
-
-### Performance Features
-- 🚀 **Parallel Processing**: All contracts checked simultaneously with batched parallel API calls
-- 📦 **Batch Processing**: 50 users per batch with concurrency limit
-- 💾 **API Caching**: 1-hour TTL for faster repeated checks
-- ⏱️ **Rate Limiting**: 10 requests/second to Explorer API
-- 🔄 **Retry Logic**: Exponential backoff on 502/504 errors
-
-### Logging Features
-- 📝 **Simple Log Format**: Easy-to-read one-line entries
-- 📊 **Flat Data Export**: TXT format for easy analysis
-- 💿 **Hourly Backups**: Automatic database backups
 
 ## 🚀 Quick Start
 
@@ -54,13 +50,14 @@ nano .env
 DISCORD_TOKEN=your_bot_token_here
 GUILD_ID=your_server_id_here
 
+# Gensyn Application Role IDs
+CODEASSIST_ROLE_ID=your_codeassist_role_id
+BLOCKASSIST_ROLE_ID=your_blockassist_role_id
+JUDGE_ROLE_ID=your_judge_role_id
+RLSWARM_ROLE_ID=your_rlswarm_role_id
+
 # Security (optional but recommended)
 MASTER_PASSWORD=your_secure_password_here
-
-# At least one contract
-CONTRACT_1_NAME=The Swarm
-CONTRACT_1_ADDRESS=0x7745a8FE4b8D2D2c3BB103F8dCae822746F35Da0
-CONTRACT_1_ROLE_ID=your_role_id_here
 ```
 
 ### 3. Run
@@ -75,13 +72,14 @@ If you set a master password, you'll be prompted to enter it on startup.
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `/link` | Link your wallet address | `/link wallet:0xYourAddress` |
-| `/verify` | Verify for all contracts | `/verify` |
-| `/verify contract:Name` | Verify for specific contract | `/verify contract:The Swarm` |
+| `/link` | Link your Gensyn Dashboard address | `/link wallet:0xYourAddress` |
+| `/verify` | Verify for all applications | `/verify` |
 | `/mystatus` | Check your verification status with transaction counts | `/mystatus` |
 | `/info` | Show all contracts and requirements | `/info` |
 | `/info contract:Name` | Show specific contract details | `/info contract:The Swarm` |
-| `/checkwallet` | Check any wallet's transactions | `/checkwallet address:0xAddress` |
+| `/mystatus` | Check your verification status | `/mystatus` |
+| `/info` | Show verification info | `/info` |
+| `/checkwallet` | Check any address's eligibility | `/checkwallet address:0xAddress` |
 | `/stats` | View bot statistics (Admin) | `/stats` |
 | `/admin failures` | View failed verifications (Admin) | `/admin failures limit:20` |
 | `/admin successes` | View successful verifications (Admin) | `/admin successes limit:20` |
@@ -90,43 +88,25 @@ If you set a master password, you'll be prompted to enter it on startup.
 
 ## ⚙️ Configuration
 
-### Contract Configuration
+### Gensyn Application Roles
 
-Each contract needs:
-- `CONTRACT_N_NAME`: Display name
-- `CONTRACT_N_ADDRESS`: Smart contract address
-- `CONTRACT_N_ROLE_ID`: Discord role ID to assign
+Each application needs a Discord role ID configured:
 
-**Default Contracts:**
+| Application | Environment Variable | Verification API |
+|-------------|---------------------|------------------|
+| CodeAssist | `CODEASSIST_ROLE_ID` | Dashboard API |
+| BlockAssist | `BLOCKASSIST_ROLE_ID` | Dashboard API |
+| Judge | `JUDGE_ROLE_ID` | Dashboard API |
+| RLSwarm | `RLSWARM_ROLE_ID` | Smart Contract |
 
-| # | Name | Address | Purpose |
-|---|------|---------|---------|
-| 1 | The Swarm | 0x7745a8FE4b8D2D2c3BB103F8dCae822746F35Da0 | Main verification |
-| 2 | Codeassist | 0x0d3A2561883203a48E4227D41D37E9ffF81CAb85 | Code assistance |
-| 3 | Block | 0xE2070109A0C1e8561274E59F024301a19581d45c | Block operations |
-| 4 | Judge | 0x51D4db531ae706a6eC732458825465058fA23a35 | Judging system |
+### API Endpoints
 
-### Adding New Contracts
-
-Edit `.env` and add:
-
-```env
-CONTRACT_5_NAME=New Contract
-CONTRACT_5_ADDRESS=0xYourContractAddress
-CONTRACT_5_ROLE_ID=your_discord_role_id
-```
-
-### Performance Tuning
-
-```env
-# For 200-400 users/min:
-BATCH_SIZE=50
-CACHE_TTL=3600
-AUTO_VERIFY_BATCH_SIZE=50
-MAX_CONCURRENT_VERIFICATIONS=10
-MAX_CONCURRENT=10
-REQUESTS_PER_SECOND=10
-```
+| Application | API Endpoint |
+|-------------|-------------|
+| CodeAssist | `https://dashboard.gensyn.ai/api/v1/applications/codeassist/userinfo/{address}` |
+| BlockAssist | `https://dashboard.gensyn.ai/api/v1/users/{address}/blockassist/stats` |
+| Judge | `https://dashboard.gensyn.ai/api/v1/applications/verdict/userinfo/{address}` |
+| RLSwarm | Smart Contract at `0x7745a8FE4b8D2D2c3BB103F8dCae822746F35Da0` |
 
 ### Security Configuration
 
@@ -147,73 +127,50 @@ MASTER_PASSWORD=your_secure_password
 ### Verification Flow
 
 1. **User links wallet**: `/link wallet:0xYourAddress`
-2. **User interacts with contracts**: Send at least 3 unique transactions
+2. **User participates**: Use Gensyn applications (CodeAssist, BlockAssist, Judge, RLSwarm)
 3. **User verifies**: `/verify`
-4. **Bot checks**: Uses Block Explorer API (two-step verification)
-5. **Role assigned**: If ≥3 unique transaction hashes found per contract
+4. **Bot checks**: Uses Gensyn Dashboard API and Smart Contract calls
+5. **Role assigned**: If eligibility criteria met for each application
 
 ### API Details
 
-**Endpoints Used:**
+**Dashboard API Endpoints:**
 ```
-Base URL: https://gensyn-testnet.explorer.alchemy.com/api
+Base URL: https://dashboard.gensyn.ai/api/v1
 
-# Step 1: Get wallet's internal txns (returns parent tx hashes)
-GET ?module=account&action=txlistinternal&address={wallet}
+# CodeAssist
+GET /applications/codeassist/userinfo/{address}
+Response: {"id": "0x...", "participation": 23.5}
 
-# Step 2: Get full trace for each transaction
-GET ?module=account&action=txlistinternal&txhash={txHash}
+# BlockAssist  
+GET /users/{address}/blockassist/stats
+Response: {"id": "0x...", "participation": 0}
+
+# Judge (Verdict)
+GET /applications/verdict/userinfo/{address}
+Response: {"totalPoints": 0, "entries": [...], "betsPlaced": 4}
 ```
 
-**Verification Logic:**
-```javascript
-// Step 1: Get wallet's internal transactions
-const walletTxns = await fetch(
-  `${API}?module=account&action=txlistinternal&address=${walletAddress}`
-);
+**Smart Contract (RLSwarm):**
+```
+Contract: 0x7745a8FE4b8D2D2c3BB103F8dCae822746F35Da0
+RPC: https://gensyn-testnet.g.alchemy.com/public
 
-// Step 2: Get unique parent transaction hashes
-const txHashes = [...new Set(walletTxns.result.map(tx => tx.transactionHash))];
-
-// Step 3: Fetch all transaction traces in PARALLEL
-const traces = await Promise.all(
-  txHashes.map(hash => 
-    fetch(`${API}?module=account&action=txlistinternal&txhash=${hash}`)
-  )
-);
-
-// Step 4: Flatten all internal txns from all traces
-const allInternalTxns = traces.flatMap(t => t.result);
-
-// Step 5: For each contract, find matching transactions
-const matchingTxns = allInternalTxns.filter(tx =>
-  tx.to?.toLowerCase() === contractAddress.toLowerCase() ||
-  tx.from?.toLowerCase() === contractAddress.toLowerCase() ||
-  tx.contractAddress?.toLowerCase() === contractAddress.toLowerCase()
-);
-
-// Step 6: Count unique transaction hashes (not individual internal calls)
-const uniqueTxHashes = [...new Set(matchingTxns.map(tx => tx.transactionHash))];
-const verified = uniqueTxHashes.length >= 3;
+Functions:
+- getPeerId(address[]) → string[][]
+- getTotalWins(string peerId) → uint256
 ```
 
 ### Log Format
 
 **Success Log (`logs/success.txt`):**
 ```
-[2024-12-05 10:30:00] SUCCESS | Discord: username (123456789) | Wallet: 0xD77...A70 | Contract: The Swarm | Txns: 5 | Role Assigned: ✅
+[2024-12-05 10:30:00] SUCCESS | Discord: username (123456789) | Address: 0xD77...A70 | App: CodeAssist | Role Assigned: ✅
 ```
 
 **Failed Log (`logs/failed.txt`):**
 ```
-[2024-12-05 10:30:00] FAILED | Discord: username (123456789) | Wallet: 0xD77...A70 | Contract: Block | Reason: Only 2 txns found (min 3 required)
-```
-
-### User Data Format (Flat Export)
-
-```
-WALLET | DISCORD_ID | DISCORD_NAME | THE_SWARM | CODEASSIST | BLOCK | JUDGE | LINKED_AT
-0xD77...A70 | 876804295658545120 | username | ✅ (5 txns) | ✅ (3 txns) | ❌ (2 txns) | ✅ (4 txns) | 2024-12-04
+[2024-12-05 10:30:00] FAILED | Discord: username (123456789) | Address: 0xD77...A70 | App: RLSwarm | Reason: No wins found
 ```
 
 ## 🚀 Deployment
